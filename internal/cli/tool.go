@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/YuleBest/ask-ai/internal/config"
@@ -62,10 +63,94 @@ func runTool(args []string, stdout, stderr io.Writer, configPath configPathFunc)
 	switch tool.Config {
 	case "webSearch":
 		return runWebSearchTool(args, toolID, operation, meta, configDir, stdout, stderr)
+	case "viewFile":
+		return runViewFileTool(args, toolID, operation, meta, configDir, stdout, stderr)
 	default:
 		printErrorf(stderr, "工具 %s 的配置类型不受支持: %s", toolID, tool.Config)
 		return 1
 	}
+}
+
+func runViewFileTool(args []string, toolID, operation string, meta config.Meta, configDir string, stdout, stderr io.Writer) int {
+	path, err := meta.PathFor("viewFile", configDir)
+	if err != nil {
+		printErrorf(stderr, "%v", err)
+		return 1
+	}
+	viewFile, _, err := config.LoadOrCreateViewFile(path)
+	if err != nil {
+		printErrorf(stderr, "%v: %s", err, path)
+		return 1
+	}
+
+	switch operation {
+	case "mode":
+		if len(args) != 3 {
+			printToolUsage(stderr)
+			return 2
+		}
+		viewFile.Mode = config.ViewFileMode(strings.TrimSpace(args[2]))
+		if err := config.SaveViewFile(path, viewFile); err != nil {
+			printErrorf(stderr, "%v", err)
+			return 1
+		}
+		fmt.Fprintf(
+			stdout,
+			"%s %s\n",
+			newOutputStyle(stdout).green(i18n.T("已设置文件查看模式:")),
+			newOutputStyle(stdout).cyan(string(viewFile.Mode)),
+		)
+		return 0
+	case "limit":
+		if len(args) != 3 {
+			printToolUsage(stderr)
+			return 2
+		}
+		limit, err := parseViewFileLimit(args[2])
+		if err != nil {
+			printErrorf(stderr, "%v", err)
+			return 1
+		}
+		viewFile.MaxBytes = limit
+		if err := config.SaveViewFile(path, viewFile); err != nil {
+			printErrorf(stderr, "%v", err)
+			return 1
+		}
+		fmt.Fprintf(
+			stdout,
+			"%s %d %s\n",
+			newOutputStyle(stdout).green(i18n.T("已设置文件查看上限:")),
+			viewFile.MaxBytes,
+			newOutputStyle(stdout).dim(i18n.T("字节")),
+		)
+		return 0
+	default:
+		printErrorf(stderr, "工具 %s 不支持操作: %s", toolID, operation)
+		return 2
+	}
+}
+
+func parseViewFileLimit(value string) (int64, error) {
+	invalid := func() error {
+		return i18n.Errorf(
+			"文件查看上限必须是 1 到 %d 之间的十进制字节数: %s",
+			config.MaxViewFileMaxBytes,
+			value,
+		)
+	}
+	if value == "" {
+		return 0, invalid()
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return 0, invalid()
+		}
+	}
+	limit, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || limit < 1 || limit > config.MaxViewFileMaxBytes {
+		return 0, invalid()
+	}
+	return limit, nil
 }
 
 func runWebSearchTool(args []string, toolID, operation string, meta config.Meta, configDir string, stdout, stderr io.Writer) int {

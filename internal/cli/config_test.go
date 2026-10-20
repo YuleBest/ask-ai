@@ -20,12 +20,12 @@ func TestConfigListCreatesFiles(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("config code = %d, stderr = %q", code, stderr.String())
 	}
-	for _, key := range []string{"meta", "models", "language", "systemPrompt", "webSearch"} {
+	for _, key := range []string{"meta", "models", "language", "systemPrompt", "webSearch", "viewFile"} {
 		if !strings.Contains(stdout.String(), key) {
 			t.Fatalf("config output = %q, want key %q", stdout.String(), key)
 		}
 	}
-	for _, file := range []string{"_meta.json", "models.json", "language.json", "system_prompt.json", "web_search.json"} {
+	for _, file := range []string{"_meta.json", "models.json", "language.json", "system_prompt.json", "web_search.json", "view_file.json"} {
 		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
 			t.Fatalf("expected config file %s: %v", file, err)
 		}

@@ -2,7 +2,7 @@
 
 [简体中文](README.md)
 
-A command-line AI assistant written in Go. It works with OpenAI-compatible APIs and supports streaming answers, follow-ups, images, task management, Exa web search, Markdown rendering, and Chinese or English output.
+A command-line AI assistant written in Go. It works with OpenAI-compatible APIs and supports streaming answers, follow-ups, images, screenshots, task management, Exa web search, Markdown rendering, and Chinese or English output.
 
 ## Install
 
@@ -22,11 +22,12 @@ Check the version with `askai version`, `--version`, or `-v`.
 askai "Explain Go context"
 askai "Give another example" -f
 askai "What is in this image?" -p ./logo.png
+askai "Explain what is on this screen" -s
 askai "Analyze this error" --show-think
 askai -b "Start continuous chat"
 ```
 
-Use `-f [hash]` to follow a task. `-b` binds the current terminal for continuous questions; enter `/exit` or press `Ctrl+C` to quit and unbind. Repeat `-p` to attach PNG, JPEG, GIF, or WebP images.
+Use `-f [hash]` to follow a task. `-b` binds the current terminal for continuous questions; enter `/exit` or press `Ctrl+C` to quit and unbind. Repeat `-p` to attach PNG, JPEG, GIF, or WebP images. `-s` captures the primary display and can be combined with `-p`; it requires an available desktop session and screen-capture permission.
 
 ## Tasks and Models
 
@@ -71,6 +72,7 @@ Configuration lives in `~/.config/ask-ai`:
 - `language.json`: output and prompt languages.
 - `system_prompt.json`: multilingual system prompts.
 - `web_search.json`: web search configuration.
+- `view_file.json`: file viewing tool configuration.
 - `_meta.json`: configuration and tool definitions.
 
 ```sh
@@ -79,9 +81,13 @@ askai config edit models
 askai config view webSearch
 askai tool ls
 askai tool webSearch use exa
+askai tool viewFile mode ask
+askai tool viewFile limit 512000
 ```
 
 `config view` redacts `key` values by default. Add `--show-secrets` to show plaintext.
+
+`viewFile` lets the model read metadata and UTF-8 text from regular local files. `ask` prompts before every read, `bypass` reads without prompting, and `off` disables the tool. `limit` sets the maximum content bytes per call, from 1 to 2097152.
 
 ## Output and Data
 

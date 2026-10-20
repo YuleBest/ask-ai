@@ -199,6 +199,15 @@ func toolStatusText(call chat.ToolCall) string {
 		} else {
 			text = i18n.T("抓取网页")
 		}
+	case "view_file":
+		var arguments struct {
+			Path string `json:"path"`
+		}
+		if json.Unmarshal([]byte(call.Function.Arguments), &arguments) == nil {
+			text = i18n.T("查看文件: %s", arguments.Path)
+		} else {
+			text = i18n.T("查看文件")
+		}
 	default:
 		text = i18n.T("调用工具: %s", call.Function.Name)
 	}
@@ -260,6 +269,39 @@ func printToolResultPreview(writer io.Writer, call chat.ToolCall, rawResult stri
 		} else {
 			fmt.Fprintln(writer, style.gray("  "+i18n.T("未返回页面正文")))
 		}
+	case "view_file":
+		var result struct {
+			ResolvedPath  string `json:"resolved_path"`
+			Size          int64  `json:"size"`
+			Offset        int64  `json:"offset"`
+			ReturnedBytes int    `json:"returned_bytes"`
+			Truncated     bool   `json:"truncated"`
+			NextOffset    int64  `json:"next_offset"`
+			Binary        bool   `json:"binary"`
+		}
+		if json.Unmarshal([]byte(rawResult), &result) != nil {
+			return
+		}
+		fmt.Fprintf(
+			writer,
+			"%s\n",
+			style.gray(fmt.Sprintf(
+				"  %d / %d %s  offset %d",
+				result.ReturnedBytes,
+				result.Size,
+				i18n.T("字节"),
+				result.Offset,
+			)),
+		)
+		if result.ResolvedPath != "" {
+			fmt.Fprintf(writer, "%s\n", style.gray("  "+i18n.T("路径: %s", result.ResolvedPath)))
+		}
+		if result.Binary {
+			fmt.Fprintln(writer, style.gray("  "+i18n.T("二进制: 是")))
+		}
+		if result.Truncated {
+			fmt.Fprintln(writer, style.gray("  "+i18n.T("截断: 是，next offset %d", result.NextOffset)))
+		}
 	}
 }
 
@@ -277,6 +319,28 @@ func toolErrorOutputText(code string) string {
 		return i18n.T("未知工具")
 	case "serialize_result":
 		return i18n.T("序列化工具结果失败")
+	case "parse_view_file_arguments":
+		return i18n.T("解析文件查看参数失败")
+	case "path_required":
+		return i18n.T("文件路径不能为空")
+	case "invalid_offset":
+		return i18n.T("offset 无效")
+	case "invalid_length":
+		return i18n.T("length 无效")
+	case "file_not_found":
+		return i18n.T("文件不存在")
+	case "not_regular_file":
+		return i18n.T("路径不是普通文件")
+	case "permission_error":
+		return i18n.T("没有权限读取文件")
+	case "permission_denied":
+		return i18n.T("用户未允许查看文件")
+	case "resolve_path_failed":
+		return i18n.T("解析文件路径失败")
+	case "stat_failed":
+		return i18n.T("读取文件信息失败")
+	case "read_failed":
+		return i18n.T("读取文件失败")
 	default:
 		return ""
 	}

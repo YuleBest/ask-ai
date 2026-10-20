@@ -18,7 +18,7 @@ func TestLoadOrCreateMeta(t *testing.T) {
 	if !created {
 		t.Fatal("LoadOrCreateMeta() did not report creation")
 	}
-	for _, key := range []string{"meta", "models", "systemPrompt", "language", "webSearch"} {
+	for _, key := range []string{"meta", "models", "systemPrompt", "language", "webSearch", "viewFile"} {
 		if _, ok := meta.Configs[key]; !ok {
 			t.Fatalf("default meta is missing key %q", key)
 		}
@@ -28,6 +28,13 @@ func TestLoadOrCreateMeta(t *testing.T) {
 	}
 	if got := len(meta.Tools["webSearch"].Definitions); got != 2 {
 		t.Fatalf("webSearch definitions = %d, want 2", got)
+	}
+	viewTool, ok := meta.Tools["viewFile"]
+	if !ok {
+		t.Fatal("default meta is missing viewFile tool")
+	}
+	if viewTool.Config != "viewFile" || len(viewTool.Definitions) != 1 || viewTool.Definitions[0].Name != "view_file" {
+		t.Fatalf("viewFile tool = %+v", viewTool)
 	}
 
 	info, err := os.Stat(path)
@@ -138,6 +145,43 @@ func TestLoadMetaAddsWebSearchKey(t *testing.T) {
 	tool, exists := loaded.Tools["webSearch"]
 	if !exists || tool.Config != "webSearch" {
 		t.Fatalf("webSearch tool = %+v, exists = %v", tool, exists)
+	}
+}
+
+func TestLoadMetaAddsViewFileConfigAndTool(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "_meta.json")
+	meta := Meta{
+		Version: metaVersion,
+		Configs: map[string]MetaEntry{
+			"meta":         {File: "_meta.json", Description: "meta"},
+			"models":       {File: "models.json", Description: "models"},
+			"systemPrompt": {File: "system_prompt.json", Description: "prompt"},
+		},
+		Tools: map[string]MetaTool{},
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+
+	loaded, _, err := LoadOrCreateMeta(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateMeta() error = %v", err)
+	}
+	entry, exists := loaded.Configs["viewFile"]
+	if !exists || entry.File != "view_file.json" {
+		t.Fatalf("viewFile entry = %+v, exists = %v", entry, exists)
+	}
+	tool, exists := loaded.Tools["viewFile"]
+	if !exists || tool.Config != "viewFile" {
+		t.Fatalf("viewFile tool = %+v, exists = %v", tool, exists)
+	}
+	if len(tool.Definitions) != 1 || tool.Definitions[0].Name != "view_file" {
+		t.Fatalf("view_file definitions = %+v", tool.Definitions)
 	}
 }
 

@@ -58,6 +58,7 @@ goreleaser release --snapshot --clean
 ~/.config/ask-ai/language.json
 ~/.config/ask-ai/system_prompt.json
 ~/.config/ask-ai/web_search.json
+~/.config/ask-ai/view_file.json
 ~/.config/ask-ai/_meta.json
 ~/.cache/ask-ai/sessions/
 ~/.cache/ask-ai/last.json
@@ -71,13 +72,13 @@ goreleaser release --snapshot --clean
 1. `cmd/askai/main.go` 创建可取消的上下文并调用 `cli.Run`。
 2. `internal/cli` 解析参数、加载配置、选择会话和模型。
 3. `internal/i18n` 根据环境变量和 `language.json` 解析输出与提示词语言。
-4. `internal/config` 负责 `_meta.json`、模型、语言、提示词和搜索配置。
+4. `internal/config` 负责 `_meta.json`、模型、语言、提示词、搜索配置和文件查看配置。
 5. `internal/chat` 发送 OpenAI 兼容请求并解析 SSE、usage 和 tool calls。
 6. `internal/cli` 执行工具、追加 tool message，再请求模型，最多 8 轮。
 7. `internal/render` 将最终正文增量渲染到 `stdout`。
 8. `internal/conversation` 保存 user 和 assistant 正文。
 
-任何内部错误和诊断都写 `stderr`。最终正文只能写 `stdout`。
+`-p` 读取本地图片，`-s` 在主显示器捕获当前屏幕；两者共用图片数量、大小和尺寸限制。任何内部错误和诊断都写 `stderr`。最终正文只能写 `stdout`。
 
 ## 包职责
 
@@ -116,8 +117,9 @@ internal/websearch/     Exa API
 
 - 工具定义放在 `_meta.json` 的 `tools` 字段。
 - 配置键必须能在默认元数据中解析。
-- 当前网络搜索工具为 `webSearch`，provider 仅支持 `exa`。
+- 当前工具为 `webSearch` 和 `viewFile`；网络搜索 provider 仅支持 `exa`。
 - 关闭工具时向 `web_search.json` 写入 `"use": false`。
+- `viewFile` 配置写入 `view_file.json`，支持 `ask`、`bypass`、`off` 和 1 到 2097152 字节上限。
 - 工具关闭后，模型请求的 `tools` 必须为空。
 - Exa 客户端实现位于 `internal/websearch`，不得在 CLI 中直接拼 HTTP 请求。
 - 搜索和抓取结果既要回传模型，也要在 `stderr` 输出经过截断和控制字符清洗的预览。

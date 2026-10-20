@@ -85,6 +85,10 @@ func ensureDefaultConfigFiles(meta config.Meta, configDir string) error {
 	if err != nil {
 		return err
 	}
+	viewFilePath, err := meta.PathFor("viewFile", configDir)
+	if err != nil {
+		return err
+	}
 	if err := config.EnsureModelsFile(modelsPath); err != nil {
 		return err
 	}
@@ -95,6 +99,9 @@ func ensureDefaultConfigFiles(meta config.Meta, configDir string) error {
 		return err
 	}
 	if err := config.EnsureWebSearchFile(webSearchPath); err != nil {
+		return err
+	}
+	if err := config.EnsureViewFile(viewFilePath); err != nil {
 		return err
 	}
 	return nil
@@ -233,6 +240,8 @@ func resolveConfigPath(meta config.Meta, configDir, key string, create bool) (st
 		err = config.EnsureLanguageFile(path)
 	case "webSearch":
 		err = config.EnsureWebSearchFile(path)
+	case "viewFile":
+		err = config.EnsureViewFile(path)
 	default:
 		if err = os.MkdirAll(filepath.Dir(path), 0o700); err == nil {
 			file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -9,7 +10,69 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestLoadScreenshotAttachment(t *testing.T) {
+	var status bytes.Buffer
+	imageData := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	imageData.Set(0, 0, color.RGBA{R: 255, A: 255})
+	imageData.Set(1, 0, color.RGBA{B: 255, A: 255})
+
+	attachment, err := loadScreenshotAttachment(&status, func() (image.Image, error) {
+		if !strings.Contains(status.String(), "正在截取当前屏幕...") {
+			t.Fatalf("capture started before status text: %q", status.String())
+		}
+		return imageData, nil
+	})
+	if err != nil {
+		t.Fatalf("loadScreenshotAttachment() error = %v", err)
+	}
+	if attachment.MIMEType != "image/png" {
+		t.Fatalf("MIME type = %q, want image/png", attachment.MIMEType)
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(attachment.Data))
+	if err != nil {
+		t.Fatalf("decode screenshot: %v", err)
+	}
+	if format != "png" || config.Width != 2 || config.Height != 1 {
+		t.Fatalf("screenshot = %s %dx%d, want png 2x1", format, config.Width, config.Height)
+	}
+	if got := status.String(); got != "正在截取当前屏幕...\n" {
+		t.Fatalf("status = %q", got)
+	}
+}
+
+func TestLoadScreenshotAttachmentReportsCaptureError(t *testing.T) {
+	var status bytes.Buffer
+	if _, err := loadScreenshotAttachment(&status, func() (image.Image, error) {
+		return nil, errors.New("capture failed")
+	}); err == nil || !strings.Contains(err.Error(), "截取屏幕失败") {
+		t.Fatalf("error = %v, want capture failure", err)
+	}
+}
+
+func TestLoadScreenshotAttachmentRejectsOversizedDimensions(t *testing.T) {
+	var status bytes.Buffer
+	imageData := image.NewRGBA(image.Rect(0, 0, maxImageDimension+1, 1))
+	if _, err := loadScreenshotAttachment(&status, func() (image.Image, error) {
+		return imageData, nil
+	}); err == nil || !strings.Contains(err.Error(), "截图尺寸无效或过大") {
+		t.Fatalf("error = %v, want oversized dimensions", err)
+	}
+}
+
+func TestCaptureScreenshotTimesOut(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+
+	if _, err := captureScreenshotWithTimeout(func() (image.Image, error) {
+		<-release
+		return image.NewRGBA(image.Rect(0, 0, 1, 1)), nil
+	}, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "截取屏幕超时") {
+		t.Fatalf("error = %v, want capture timeout", err)
+	}
+}
 
 func TestLoadImageAttachments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "logo.png")

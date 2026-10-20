@@ -78,6 +78,10 @@ func LoadOrCreateMeta(path string) (Meta, bool, error) {
 		meta.Configs["webSearch"] = defaults.Configs["webSearch"]
 		changed = true
 	}
+	if _, exists := meta.Configs["viewFile"]; !exists {
+		meta.Configs["viewFile"] = defaults.Configs["viewFile"]
+		changed = true
+	}
 	if meta.Tools == nil {
 		meta.Tools = make(map[string]MetaTool)
 	}
@@ -165,6 +169,10 @@ func defaultMeta() Meta {
 				File:        "web_search.json",
 				Description: "网络搜索提供商配置",
 			},
+			"viewFile": {
+				File:        "view_file.json",
+				Description: "文件查看工具配置",
+			},
 		},
 		Tools: map[string]MetaTool{
 			"webSearch": {
@@ -172,6 +180,12 @@ func defaultMeta() Meta {
 				Config:      "webSearch",
 				Operations:  []string{"off", "use"},
 				Definitions: defaultWebToolDefinitions(),
+			},
+			"viewFile": {
+				Description: "让模型查看本机普通文件的元信息和 UTF-8 文本内容",
+				Config:      "viewFile",
+				Operations:  []string{"mode", "limit"},
+				Definitions: defaultViewFileToolDefinitions(),
 			},
 		},
 	}
@@ -205,6 +219,25 @@ func defaultWebToolDefinitions() []MetaToolDefinition {
 					"url": {"type": "string", "description": "HTTP or HTTPS URL to fetch"}
 				},
 				"required": ["url"],
+				"additionalProperties": false
+			}`),
+		},
+	}
+}
+
+func defaultViewFileToolDefinitions() []MetaToolDefinition {
+	return []MetaToolDefinition{
+		{
+			Name:        "view_file",
+			Description: "View metadata and UTF-8 text from regular files readable by the current user. Relative paths resolve from the current working directory.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"path": {"type": "string", "description": "File path; relative paths resolve from the current working directory"},
+					"offset": {"type": "integer", "minimum": 0, "description": "Starting byte offset, default 0"},
+					"length": {"type": "integer", "minimum": 1, "description": "Number of bytes to read; capped by the configured per-call limit"}
+				},
+				"required": ["path"],
 				"additionalProperties": false
 			}`),
 		},

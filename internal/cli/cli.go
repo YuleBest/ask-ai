@@ -39,6 +39,8 @@ func runWithTerminal(ctx context.Context, args []string, stdout, stderr io.Write
 }
 
 func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, configPath configPathFunc, terminalID terminalIDProvider) int {
+	stdinReader := bufio.NewReader(stdin)
+
 	allowLanguageFallback := languageFallbackAllowed(args)
 	if err := configureLanguage(configPath); err != nil && !allowLanguageFallback {
 		printErrorf(stderr, "%v", err)
@@ -97,10 +99,22 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 		printUsage(stderr)
 		return 2
 	}
+	if opts.screenshot && len(opts.pictures) >= maxImageCount {
+		printErrorf(stderr, "图片数量不能超过 %d 张", maxImageCount)
+		return 1
+	}
 	pictures, err := loadImageAttachments(opts.pictures)
 	if err != nil {
 		printErrorf(stderr, "%v", err)
 		return 1
+	}
+	if opts.screenshot {
+		screenshotAttachment, err := loadScreenshotAttachment(stderr, captureScreen)
+		if err != nil {
+			printErrorf(stderr, "%v", err)
+			return 1
+		}
+		pictures = append(pictures, screenshotAttachment)
 	}
 
 	terminalSessionID := ""
@@ -245,8 +259,18 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 		printErrorf(stderr, "%v: %s", err, webSearchPath)
 		return 1
 	}
+	viewFilePath, err := meta.PathFor("viewFile", configDir)
+	if err != nil {
+		printErrorf(stderr, "%v: %s", err, metaPath)
+		return 1
+	}
+	viewFileConfig, _, err := config.LoadOrCreateViewFile(viewFilePath)
+	if err != nil {
+		printErrorf(stderr, "%v: %s", err, viewFilePath)
+		return 1
+	}
 	if created {
-		printCreatedConfig(stderr, modelsPath, languagePath, systemPromptPath, metaPath)
+		printCreatedConfig(stderr, modelsPath, languagePath, systemPromptPath, metaPath, viewFilePath)
 		return 1
 	}
 	if err := config.ValidateModels(models); err != nil {
@@ -254,7 +278,8 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 		return 1
 	}
 	var webTools []chat.Tool
-	var executeWebTool func(context.Context, chat.ToolCall) string
+	var webExecutor webToolExecutor
+	webToolsEnabled := false
 	if webSearchConfig.IsConfigured() {
 		provider, err := webSearchConfig.ResolveProvider()
 		if err != nil {
@@ -266,15 +291,60 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 			printErrorf(stderr, "%v: %s", err, metaPath)
 			return 1
 		}
-		executor := webToolExecutor{
+		webExecutor = webToolExecutor{
 			client: websearch.ExaClient{
 				APIKey:   provider.Key,
 				Language: i18n.PromptLanguage(),
 			},
 			language: i18n.PromptLanguage(),
 		}
-		executeWebTool = executor.Execute
+		webToolsEnabled = true
 		systemPrompt = addWebToolInstructions(systemPrompt, i18n.PromptLanguage())
+	}
+
+	var fileTools []chat.Tool
+	var fileExecutor fileToolExecutor
+	fileToolsEnabled := viewFileConfig.Mode != config.ViewFileModeOff
+	if fileToolsEnabled {
+		fileTools, err = fileToolDefinitionsFromMeta(meta, i18n.PromptLanguage())
+		if err != nil {
+			printErrorf(stderr, "%v: %s", err, metaPath)
+			return 1
+		}
+		workDir, workErr := os.Getwd()
+		if workErr != nil {
+			printErrorf(stderr, "%v", workErr)
+			return 1
+		}
+		fileExecutor = fileToolExecutor{
+			config:      viewFileConfig,
+			workDir:     workDir,
+			reader:      stdinReader,
+			stderr:      stderr,
+			interactive: isInteractiveInput(stdin),
+			language:    i18n.PromptLanguage(),
+		}
+		systemPrompt = addFileToolInstructions(systemPrompt, i18n.PromptLanguage())
+	}
+
+	tools := make([]chat.Tool, 0, len(webTools)+len(fileTools))
+	tools = append(tools, webTools...)
+	tools = append(tools, fileTools...)
+	var executeTool func(context.Context, chat.ToolCall) string
+	if len(tools) > 0 {
+		executeTool = func(ctx context.Context, call chat.ToolCall) string {
+			switch call.Function.Name {
+			case "web_search", "web_fetch":
+				if webToolsEnabled {
+					return webExecutor.Execute(ctx, call)
+				}
+			case "view_file":
+				if fileToolsEnabled {
+					return fileExecutor.Execute(ctx, call)
+				}
+			}
+			return toolErrorJSON(i18n.TFor(i18n.PromptLanguage(), "未知工具: %s", call.Function.Name), "unknown_tool")
+		}
 	}
 	var provider config.Provider
 	var model config.Model
@@ -307,7 +377,7 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 			Model:           model.ID,
 			ReasoningEffort: model.ReasoningEffort,
 			Messages:        messages,
-		}, stdout, stderr, opts.showThink, provider.ID+"/"+model.ID, webTools, executeWebTool)
+		}, stdout, stderr, opts.showThink, provider.ID+"/"+model.ID, tools, executeTool)
 		if err != nil {
 			return err
 		}
@@ -325,7 +395,7 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 	if opts.bind {
 		printBoundTask(stderr, session.ID)
 		printBindHint(stderr)
-		return runBoundQuestions(ctx, stdin, stderr, opts.question, pictures, runQuestion)
+		return runBoundQuestions(ctx, stdinReader, stderr, opts.question, pictures, runQuestion)
 	}
 
 	if err := runQuestion(opts.question, pictures); err != nil {
@@ -354,8 +424,7 @@ func printBoundTask(w io.Writer, sessionID string) {
 
 type questionRunner func(string, []chat.ImageAttachment) error
 
-func runBoundQuestions(ctx context.Context, stdin io.Reader, stderr io.Writer, initialQuestion string, initialImages []chat.ImageAttachment, runQuestion questionRunner) int {
-	reader := bufio.NewReader(stdin)
+func runBoundQuestions(ctx context.Context, reader *bufio.Reader, stderr io.Writer, initialQuestion string, initialImages []chat.ImageAttachment, runQuestion questionRunner) int {
 	needDivider := false
 	pendingImages := initialImages
 
@@ -454,12 +523,13 @@ func printBindExit(w io.Writer) {
 	fmt.Fprintln(w, style.dim(i18n.T("已退出连续对话，终端绑定已解除。")))
 }
 
-func printCreatedConfig(w io.Writer, configPath, languagePath, promptPath, metaPath string) {
+func printCreatedConfig(w io.Writer, configPath, languagePath, promptPath, metaPath, viewFilePath string) {
 	style := newOutputStyle(w)
 	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成配置文件:")), style.cyan(configPath))
 	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成语言配置:")), style.cyan(languagePath))
 	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成系统提示词:")), style.cyan(promptPath))
 	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成配置元数据:")), style.cyan(metaPath))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成文件查看配置:")), style.cyan(viewFilePath))
 	fmt.Fprintln(w, style.yellow(i18n.T("请填写 provider 的 url、key 和 models 后重试。")))
 }
 
@@ -475,6 +545,7 @@ type cliOptions struct {
 	bindHash   string
 	showThink  bool
 	pictures   []string
+	screenshot bool
 	question   string
 }
 
@@ -515,6 +586,8 @@ func parseArgs(args []string) (cliOptions, error) {
 			}
 			opts.pictures = append(opts.pictures, args[0])
 			args = args[1:]
+		case "-s", "--screenshot":
+			opts.screenshot = true
 		case "--":
 			parseOptions = false
 		default:
@@ -587,6 +660,7 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 		roundStartedAt := time.Now()
 		var firstDeltaAt time.Time
 		var roundContent strings.Builder
+		roundContentStarted := false
 		roundReasoningStarted := false
 		roundReasoningLastByte := byte(0)
 
@@ -618,7 +692,7 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 			if safeContent == "" {
 				return nil
 			}
-			if contentStarted && lastByte != '\n' && !strings.HasPrefix(safeContent, "\n") {
+			if contentStarted && !roundContentStarted && lastByte != '\n' && !strings.HasPrefix(safeContent, "\n") {
 				if _, err := renderer.Write([]byte("\n")); err != nil {
 					return err
 				}
@@ -640,6 +714,7 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 				thinking.clearBeforeOutput()
 			}
 			contentStarted = true
+			roundContentStarted = true
 			if _, err := renderer.Write([]byte(safeContent)); err != nil {
 				return err
 			}

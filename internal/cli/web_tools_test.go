@@ -93,6 +93,49 @@ func TestToolStatusTextRemovesTerminalControls(t *testing.T) {
 	}
 }
 
+func TestViewFileToolStatusText(t *testing.T) {
+	call := chat.ToolCall{Function: chat.ToolCallFunction{
+		Name:      "view_file",
+		Arguments: `{"path":"/tmp/\u001b[31msecret.txt","offset":5,"length":10}`,
+	}}
+
+	got := toolStatusText(call)
+	if !strings.Contains(got, "查看文件: /tmp/") || !strings.Contains(got, "secret.txt") {
+		t.Fatalf("toolStatusText() = %q", got)
+	}
+	if strings.Contains(got, "\x1b") || strings.Contains(got, "offset") {
+		t.Fatalf("toolStatusText() leaked controls or range details: %q", got)
+	}
+}
+
+func TestPrintViewFileResultPreviewOmitsContent(t *testing.T) {
+	var output bytes.Buffer
+	call := chat.ToolCall{Function: chat.ToolCallFunction{Name: "view_file"}}
+	result := `{"path":"notes.txt","resolved_path":"/home/user/notes.txt","size":20,"offset":5,"returned_bytes":5,"truncated":true,"next_offset":10,"binary":false,"content":"secret content","notice":"truncated"}`
+
+	printToolResultPreview(&output, call, result)
+	got := output.String()
+	for _, want := range []string{"/home/user/notes.txt", "5 / 20", "offset 5", "next offset 10"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("preview = %q, want %q", got, want)
+		}
+	}
+	if strings.Contains(got, "secret content") {
+		t.Fatalf("preview leaked file content: %q", got)
+	}
+}
+
+func TestPrintViewFileBinaryPreview(t *testing.T) {
+	var output bytes.Buffer
+	call := chat.ToolCall{Function: chat.ToolCallFunction{Name: "view_file"}}
+	result := `{"path":"app.bin","resolved_path":"/home/user/app.bin","size":10,"offset":0,"returned_bytes":10,"truncated":false,"next_offset":10,"binary":true}`
+
+	printToolResultPreview(&output, call, result)
+	if !strings.Contains(output.String(), "二进制") {
+		t.Fatalf("preview = %q, want binary status", output.String())
+	}
+}
+
 func TestWebToolDefinitionsUseMetadata(t *testing.T) {
 	tools := webToolDefinitions()
 	if len(tools) != 2 || tools[0].Function.Name != "web_search" || tools[1].Function.Name != "web_fetch" {
