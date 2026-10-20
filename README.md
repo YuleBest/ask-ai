@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-Go 命令行 AI 助手，兼容 OpenAI 接口。支持流式回答、追问、图片、任务、Exa 搜索和中英文界面。
+Go 命令行 AI 助手，兼容 OpenAI 接口。支持流式回答、追问、图片、屏幕截图、任务、Exa 搜索和中英文界面。
 
 ## 安装
 
@@ -20,11 +20,12 @@ go build -trimpath -o ~/.local/bin/askai ./cmd/askai
 askai "解释 Go 的 context"
 askai "再举一个例子" -f
 askai "这张图是什么" -p ./logo.png
+askai "解释当前屏幕" -s
 askai "分析这个报错" --show-think
 askai -b "进入连续对话"
 ```
 
-`-f [hash]` 追问任务。`-b` 绑定当前终端进行连续对话，`/exit` 或 `Ctrl+C` 退出并解绑。`-p` 可重复，支持 PNG、JPEG、GIF、WebP。
+`-f [hash]` 追问任务。`-b` 绑定当前终端进行连续对话，`/exit` 或 `Ctrl+C` 退出并解绑。`-p` 可重复，支持 PNG、JPEG、GIF、WebP。`-s` 截取主显示器当前画面，可与 `-p` 组合，需要可用的桌面会话和屏幕捕获权限。
 
 ## 任务与模型
 
@@ -69,6 +70,7 @@ askai config edit language
 - `language.json`：输出与提示词语言。
 - `system_prompt.json`：多语言系统提示词。
 - `web_search.json`：网络搜索配置。
+- `view_file.json`：文件查看工具配置。
 - `_meta.json`：配置和工具定义。
 
 ```sh
@@ -77,9 +79,13 @@ askai config edit models
 askai config view webSearch
 askai tool ls
 askai tool webSearch use exa
+askai tool viewFile mode ask
+askai tool viewFile limit 512000
 ```
 
 `config view` 默认隐藏 `key`，加 `--show-secrets` 显示明文。
+
+`viewFile` 让模型读取本机普通文件的元信息和 UTF-8 文本。`ask` 每次确认，`bypass` 直接读取，`off` 关闭。`limit` 设置单次最多返回的字节数，范围 1 到 2097152。
 
 ## 输出与数据
 

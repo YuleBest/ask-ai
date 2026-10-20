@@ -105,6 +105,7 @@ func TestRun(t *testing.T) {
 	if err := os.WriteFile(systemPromptPath, []byte(`{"zh-CN":"自定义系统提示词","en":"Custom system prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, filepath.Dir(path))
 
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"测试", "问题"}, &stdout, &stderr, func() (string, error) {
@@ -228,6 +229,117 @@ func TestRunPictureAttachment(t *testing.T) {
 	}
 	if !bytes.Equal(gotImage, imageData) {
 		t.Fatalf("uploaded image data = %v, want %v", gotImage, imageData)
+	}
+}
+
+func TestRunScreenshotAttachment(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	originalCapture := captureScreen
+	t.Cleanup(func() { captureScreen = originalCapture })
+	captureScreen = func() (image.Image, error) {
+		imageData := image.NewRGBA(image.Rect(0, 0, 3, 2))
+		imageData.Set(1, 1, color.RGBA{G: 255, A: 255})
+		return imageData, nil
+	}
+
+	var userContent json.RawMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		for _, message := range payload.Messages {
+			if message.Role == "user" {
+				userContent = message.Content
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"这是当前屏幕\"}}]}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "models.json")
+	writeTestModelsConfig(t, path, server.URL)
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
+		t.Fatalf("write system prompt: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"描述当前屏幕", "-s"}, &stdout, &stderr, func() (string, error) {
+		return path, nil
+	})
+	if code != 0 {
+		t.Fatalf("run() code = %d, stderr = %q", code, stderr.String())
+	}
+	if got := stdout.String(); got != "这是当前屏幕\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	if !strings.Contains(stderr.String(), "正在截取当前屏幕...") {
+		t.Fatalf("stderr = %q, want screenshot status", stderr.String())
+	}
+
+	var parts []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		ImageURL struct {
+			URL string `json:"url"`
+		} `json:"image_url"`
+	}
+	if err := json.Unmarshal(userContent, &parts); err != nil {
+		t.Fatalf("decode user content: %v\ncontent=%s", err, userContent)
+	}
+	if len(parts) != 2 || parts[0].Type != "text" || parts[0].Text != "描述当前屏幕" ||
+		parts[1].Type != "image_url" {
+		t.Fatalf("parts = %+v", parts)
+	}
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(parts[1].ImageURL.URL, prefix) {
+		t.Fatalf("image URL = %q", parts[1].ImageURL.URL)
+	}
+	imageData, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(parts[1].ImageURL.URL, prefix))
+	if err != nil {
+		t.Fatalf("decode image data: %v", err)
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(imageData))
+	if err != nil {
+		t.Fatalf("decode screenshot: %v", err)
+	}
+	if format != "png" || config.Width != 3 || config.Height != 2 {
+		t.Fatalf("screenshot = %s %dx%d, want png 3x2", format, config.Width, config.Height)
+	}
+}
+
+func TestRunRejectsPicturePlusScreenshotOverLimit(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	originalCapture := captureScreen
+	t.Cleanup(func() { captureScreen = originalCapture })
+	captureScreen = func() (image.Image, error) {
+		t.Fatal("capture should not start when the image count is over the limit")
+		return nil, nil
+	}
+
+	args := []string{"问题", "-s"}
+	for range maxImageCount {
+		args = append(args, "-p", "unused.png")
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), args, &stdout, &stderr, func() (string, error) {
+		return filepath.Join(t.TempDir(), "models.json"), nil
+	})
+	if code != 1 {
+		t.Fatalf("run() code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "图片数量不能超过 8 张") {
+		t.Fatalf("stderr = %q, want image count error", stderr.String())
 	}
 }
 
@@ -379,6 +491,36 @@ func TestAskSeparatesContentAcrossToolRounds(t *testing.T) {
 	}
 }
 
+func TestAskKeepsStreamedContentWithinRoundContiguous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"阿\"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"里\"}}]}\n\n")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"是\"}}]}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	answer, err := ask(
+		context.Background(),
+		chat.Client{APIURL: server.URL, APIKey: "test"},
+		chat.Request{Messages: []chat.Message{{Role: "user", Content: "测试"}}},
+		&stdout,
+		&stderr,
+		false,
+		"local/test-model",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ask() error = %v", err)
+	}
+	if answer != "阿里是" || stdout.String() != "阿里是\n" {
+		t.Fatalf("answer = %q, stdout = %q", answer, stdout.String())
+	}
+}
+
 func TestAskSuppressesPartialUsage(t *testing.T) {
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +626,7 @@ func TestRunWebSearchToolToggle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadOrCreateMeta() error = %v", err)
 			}
+			disableViewFile(t, dir)
 			webPath, err := meta.PathFor("webSearch", dir)
 			if err != nil {
 				t.Fatalf("PathFor(webSearch) error = %v", err)
@@ -504,6 +647,212 @@ func TestRunWebSearchToolToggle(t *testing.T) {
 				t.Fatalf("tools = %+v, want %d", requestTools, tt.wantTools)
 			}
 		})
+	}
+}
+
+func TestRunFileToolModesControlDefinitions(t *testing.T) {
+	tests := []struct {
+		mode       config.ViewFileMode
+		wantTools  int
+		wantPrompt bool
+	}{
+		{mode: config.ViewFileModeOff, wantTools: 0, wantPrompt: false},
+		{mode: config.ViewFileModeAsk, wantTools: 1, wantPrompt: true},
+		{mode: config.ViewFileModeBypass, wantTools: 1, wantPrompt: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+			var requestTools []chat.Tool
+			var systemPrompt string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var payload struct {
+					Messages []struct {
+						Role    string `json:"role"`
+						Content string `json:"content"`
+					} `json:"messages"`
+					Tools []chat.Tool `json:"tools"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				requestTools = payload.Tools
+				for _, message := range payload.Messages {
+					if message.Role == "system" {
+						systemPrompt = message.Content
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"答案\"}}]}\n\n")
+				io.WriteString(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+
+			dir := t.TempDir()
+			modelPath := filepath.Join(dir, "models.json")
+			writeTestModelsConfig(t, modelPath, server.URL)
+			if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
+				t.Fatalf("write system prompt: %v", err)
+			}
+			meta, _, err := config.LoadOrCreateMeta(config.MetaPath(modelPath))
+			if err != nil {
+				t.Fatalf("LoadOrCreateMeta() error = %v", err)
+			}
+			viewPath, err := meta.PathFor("viewFile", dir)
+			if err != nil {
+				t.Fatalf("PathFor(viewFile) error = %v", err)
+			}
+			if err := config.SaveViewFile(viewPath, config.ViewFileConfig{
+				Mode:     tt.mode,
+				MaxBytes: config.DefaultViewFileMaxBytes,
+			}); err != nil {
+				t.Fatalf("SaveViewFile() error = %v", err)
+			}
+
+			var stdout, stderr bytes.Buffer
+			code := run(context.Background(), []string{"测试"}, &stdout, &stderr, func() (string, error) {
+				return modelPath, nil
+			})
+			if code != 0 {
+				t.Fatalf("run() code = %d, stderr = %q", code, stderr.String())
+			}
+			if len(requestTools) != tt.wantTools {
+				t.Fatalf("tools = %+v, want %d", requestTools, tt.wantTools)
+			}
+			if tt.wantTools == 1 && requestTools[0].Function.Name != "view_file" {
+				t.Fatalf("tool name = %q, want view_file", requestTools[0].Function.Name)
+			}
+			if got := strings.Contains(systemPrompt, "view_file"); got != tt.wantPrompt {
+				t.Fatalf("system prompt contains view_file = %v, want %v: %q", got, tt.wantPrompt, systemPrompt)
+			}
+		})
+	}
+}
+
+func TestBoundFileConfirmationSharesReader(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "view.txt")
+	if err := os.WriteFile(path, []byte("shared reader"), 0o600); err != nil {
+		t.Fatalf("write view file: %v", err)
+	}
+	store, err := conversation.DefaultStore()
+	if err != nil {
+		t.Fatalf("DefaultStore() error = %v", err)
+	}
+	sessionID := "feedface" + strings.Repeat("5", 24)
+	if err := store.Save(taskTestSession(sessionID, "历史问题")); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	var requests []struct {
+		Messages []chat.Message `json:"messages"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []chat.Message `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		requests = append(requests, struct {
+			Messages []chat.Message `json:"messages"`
+		}{Messages: payload.Messages})
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch len(requests) {
+		case 1:
+			arguments, err := json.Marshal(map[string]string{"path": path})
+			if err != nil {
+				t.Errorf("marshal tool arguments: %v", err)
+				return
+			}
+			event := map[string]any{
+				"choices": []any{map[string]any{
+					"delta": map[string]any{
+						"tool_calls": []any{map[string]any{
+							"index": 0,
+							"id":    "call_view",
+							"type":  "function",
+							"function": map[string]any{
+								"name":      "view_file",
+								"arguments": string(arguments),
+							},
+						}},
+					},
+				}},
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				t.Errorf("marshal tool event: %v", err)
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", data)
+		case 2:
+			io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"第一轮完成\"}}]}\n\n")
+		default:
+			io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"第二轮完成\"}}]}\n\n")
+		}
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	modelPath := filepath.Join(dir, "models.json")
+	writeTestModelsConfig(t, modelPath, server.URL)
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
+		t.Fatalf("write system prompt: %v", err)
+	}
+	meta, _, err := config.LoadOrCreateMeta(config.MetaPath(modelPath))
+	if err != nil {
+		t.Fatalf("LoadOrCreateMeta() error = %v", err)
+	}
+	viewPath, err := meta.PathFor("viewFile", dir)
+	if err != nil {
+		t.Fatalf("PathFor(viewFile) error = %v", err)
+	}
+	if err := config.SaveViewFile(viewPath, config.ViewFileConfig{
+		Mode:     config.ViewFileModeAsk,
+		MaxBytes: config.DefaultViewFileMaxBytes,
+	}); err != nil {
+		t.Fatalf("SaveViewFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithTerminalInput(
+		context.Background(),
+		[]string{"-b", sessionID[:7], "第一个问题"},
+		strings.NewReader("y\n第二个问题\n/exit\n"),
+		&stdout,
+		&stderr,
+		func() (string, error) { return modelPath, nil },
+		testTerminalProvider("abcdef0123456789abcdef0123456789"),
+	)
+	if code != 0 {
+		t.Fatalf("runWithTerminalInput() code = %d, stderr = %q", code, stderr.String())
+	}
+	if len(requests) != 3 {
+		t.Fatalf("request count = %d, want 3", len(requests))
+	}
+	secondRequest := requests[1].Messages
+	if len(secondRequest) == 0 || secondRequest[len(secondRequest)-1].Role != "tool" {
+		t.Fatalf("second request messages = %+v, want tool result", secondRequest)
+	}
+	thirdRequest := requests[2].Messages
+	var lastUser string
+	for _, message := range thirdRequest {
+		if message.Role == "user" {
+			content, ok := message.Content.(string)
+			if !ok {
+				t.Fatalf("user message content = %#v, want text", message.Content)
+			}
+			lastUser = content
+		}
+	}
+	if lastUser != "第二个问题" {
+		t.Fatalf("last user message = %q, want 第二个问题", lastUser)
 	}
 }
 
@@ -610,6 +959,7 @@ func TestParseArgs(t *testing.T) {
 		bindHash   string
 		showThink  bool
 		pictures   []string
+		screenshot bool
 		question   string
 		wantErr    bool
 	}{
@@ -619,6 +969,9 @@ func TestParseArgs(t *testing.T) {
 		{name: "picture before question", args: []string{"-p", "shot.png", "普通", "问题"}, pictures: []string{"shot.png"}, question: "普通 问题"},
 		{name: "picture after question", args: []string{"普通", "问题", "--picture", "shot.png"}, pictures: []string{"shot.png"}, question: "普通 问题"},
 		{name: "multiple pictures", args: []string{"-p", "a.png", "--picture", "b.jpg", "问题"}, pictures: []string{"a.png", "b.jpg"}, question: "问题"},
+		{name: "screenshot before question", args: []string{"-s", "普通", "问题"}, screenshot: true, question: "普通 问题"},
+		{name: "screenshot after question", args: []string{"普通", "问题", "--screenshot"}, screenshot: true, question: "普通 问题"},
+		{name: "picture and screenshot", args: []string{"-p", "shot.png", "-s", "问题"}, pictures: []string{"shot.png"}, screenshot: true, question: "问题"},
 		{name: "follow after question", args: []string{"继续", "问", "-f"}, follow: true, question: "继续 问"},
 		{name: "bind hash after question", args: []string{"继续", "-b", "abcdef"}, bind: true, bindHash: "abcdef", question: "继续"},
 		{name: "short follow", args: []string{"-f", "继续"}, follow: true, question: "继续"},
@@ -653,14 +1006,25 @@ func TestParseArgs(t *testing.T) {
 			if opts.follow != tt.follow || opts.followHash != tt.followHash ||
 				opts.bind != tt.bind || opts.bindHash != tt.bindHash ||
 				opts.showThink != tt.showThink || !slices.Equal(opts.pictures, tt.pictures) ||
-				opts.question != tt.question {
+				opts.screenshot != tt.screenshot || opts.question != tt.question {
 				t.Fatalf(
-					"parseArgs() = (%v, %q, %v, %q, %v, %v, %q), want (%v, %q, %v, %q, %v, %v, %q)",
-					opts.follow, opts.followHash, opts.bind, opts.bindHash, opts.showThink, opts.pictures, opts.question,
-					tt.follow, tt.followHash, tt.bind, tt.bindHash, tt.showThink, tt.pictures, tt.question,
+					"parseArgs() = (%v, %q, %v, %q, %v, %v, %v, %q), want (%v, %q, %v, %q, %v, %v, %v, %q)",
+					opts.follow, opts.followHash, opts.bind, opts.bindHash, opts.showThink, opts.pictures, opts.screenshot, opts.question,
+					tt.follow, tt.followHash, tt.bind, tt.bindHash, tt.showThink, tt.pictures, tt.screenshot, tt.question,
 				)
 			}
 		})
+	}
+}
+
+func TestParseArgsAcceptsScreenshotFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"-s", "描述当前屏幕"},
+		{"描述当前屏幕", "--screenshot"},
+	} {
+		if _, err := parseArgs(args); err != nil {
+			t.Fatalf("parseArgs(%q) error = %v", args, err)
+		}
 	}
 }
 
@@ -697,6 +1061,7 @@ func TestRunFollow(t *testing.T) {
 	if err := os.WriteFile(systemPromptPath, []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, dir)
 
 	store, err := conversation.DefaultStore()
 	if err != nil {
@@ -793,6 +1158,7 @@ func TestRunFollowSpecifiedSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, dir)
 
 	store, err := conversation.DefaultStore()
 	if err != nil {
@@ -933,6 +1299,7 @@ func TestRunUsesMetaConfigPaths(t *testing.T) {
 		t.Fatalf("write meta: %v", err)
 	}
 	writeTestModelsConfig(t, filepath.Join(customDir, "models.json"), server.URL)
+	disableViewFile(t, dir)
 	if err := os.WriteFile(filepath.Join(customDir, "prompt.txt"), []byte("元数据 {{os}}/{{arch}}\n"), 0o600); err != nil {
 		t.Fatalf("write custom prompt: %v", err)
 	}
@@ -1046,6 +1413,7 @@ func TestRunBindStartsConversationLoop(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, dir)
 
 	store, err := conversation.DefaultStore()
 	if err != nil {
@@ -1198,6 +1566,7 @@ func TestRunBindUnbindsOnContextCancel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, dir)
 
 	store, err := conversation.DefaultStore()
 	if err != nil {
@@ -1283,6 +1652,7 @@ func TestBoundTerminalFollowsWithoutFlag(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
+	disableViewFile(t, dir)
 
 	store, err := conversation.DefaultStore()
 	if err != nil {
@@ -1411,6 +1781,24 @@ func writeTestModelsConfig(t *testing.T, path, apiURL string) {
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("write models config: %v", err)
+	}
+}
+
+func disableViewFile(t *testing.T, dir string) {
+	t.Helper()
+	meta, _, err := config.LoadOrCreateMeta(filepath.Join(dir, "_meta.json"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateMeta() error = %v", err)
+	}
+	path, err := meta.PathFor("viewFile", dir)
+	if err != nil {
+		t.Fatalf("PathFor(viewFile) error = %v", err)
+	}
+	if err := config.SaveViewFile(path, config.ViewFileConfig{
+		Mode:     config.ViewFileModeOff,
+		MaxBytes: config.DefaultViewFileMaxBytes,
+	}); err != nil {
+		t.Fatalf("SaveViewFile() error = %v", err)
 	}
 }
 

@@ -68,6 +68,9 @@ func TestHelpCommandAndSubcommandHelp(t *testing.T) {
 				if !strings.Contains(stdout.String(), "-p, --picture <path>") {
 					t.Fatalf("top-level help lacks picture option: %q", stdout.String())
 				}
+				if !strings.Contains(stdout.String(), "-s, --screenshot") {
+					t.Fatalf("top-level help lacks screenshot option: %q", stdout.String())
+				}
 				if !strings.Contains(stdout.String(), "version") {
 					t.Fatalf("top-level help lacks version command: %q", stdout.String())
 				}
@@ -88,6 +91,22 @@ func TestDisplayWidth(t *testing.T) {
 	} {
 		if got := displayWidth(text); got != want {
 			t.Fatalf("displayWidth(%q) = %d, want %d", text, got, want)
+		}
+	}
+}
+
+func TestToolHelpIncludesViewFileCommands(t *testing.T) {
+	var output bytes.Buffer
+	printToolUsage(&output)
+
+	for _, want := range []string{
+		"askai tool viewFile mode <ask|bypass|off>",
+		"askai tool viewFile limit <bytes>",
+		"2097152",
+		"~/.config/ask-ai/view_file.json",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("tool help = %q, want %q", output.String(), want)
 		}
 	}
 }
