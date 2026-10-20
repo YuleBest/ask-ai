@@ -30,7 +30,7 @@ go build -trimpath -o ~/.local/bin/askai ./cmd/askai
 
 CI 定义在 `.github/workflows/ci.yml`，会运行测试、竞态检查、`vet` 和 Windows/Darwin 交叉构建。
 
-发布由 `.github/workflows/release.yml` 和 `.goreleaser.yaml` 完成。推送 `v*` 标签后，工作流先运行测试，再构建 Linux、macOS 和 Windows 的 amd64/arm64 产物，附带 README、LICENSE、ZIP/TAR.GZ 压缩包和 `checksums.txt`，最后创建 GitHub Release。含预发布后缀的标签会自动标记为 Pre-Release。
+发布由 `.github/workflows/release.yml` 和 `.goreleaser.yaml` 完成。推送 `v*` 标签后，工作流先运行测试，再构建 Linux、macOS 和 Windows 的 amd64/arm64 产物，附带中英文 README、LICENSE、ZIP/TAR.GZ 压缩包和 `checksums.txt`，最后创建 GitHub Release。含预发布后缀的标签会自动标记为 Pre-Release。
 
 发布前确认版本号、文档和标签一致：
 
@@ -55,7 +55,8 @@ goreleaser release --snapshot --clean
 
 ```text
 ~/.config/ask-ai/models.json
-~/.config/ask-ai/system_prompt.txt
+~/.config/ask-ai/language.json
+~/.config/ask-ai/system_prompt.json
 ~/.config/ask-ai/web_search.json
 ~/.config/ask-ai/_meta.json
 ~/.cache/ask-ai/sessions/
@@ -69,11 +70,12 @@ goreleaser release --snapshot --clean
 
 1. `cmd/askai/main.go` 创建可取消的上下文并调用 `cli.Run`。
 2. `internal/cli` 解析参数、加载配置、选择会话和模型。
-3. `internal/config` 负责 `_meta.json`、模型、提示词和搜索配置。
-4. `internal/chat` 发送 OpenAI 兼容请求并解析 SSE、usage 和 tool calls。
-5. `internal/cli` 执行工具、追加 tool message，再请求模型，最多 8 轮。
-6. `internal/render` 将最终正文增量渲染到 `stdout`。
-7. `internal/conversation` 保存 user 和 assistant 正文。
+3. `internal/i18n` 根据环境变量和 `language.json` 解析输出与提示词语言。
+4. `internal/config` 负责 `_meta.json`、模型、语言、提示词和搜索配置。
+5. `internal/chat` 发送 OpenAI 兼容请求并解析 SSE、usage 和 tool calls。
+6. `internal/cli` 执行工具、追加 tool message，再请求模型，最多 8 轮。
+7. `internal/render` 将最终正文增量渲染到 `stdout`。
+8. `internal/conversation` 保存 user 和 assistant 正文。
 
 任何内部错误和诊断都写 `stderr`。最终正文只能写 `stdout`。
 
@@ -86,6 +88,7 @@ internal/chat/          Chat Completions、SSE、usage、工具协议
 internal/config/        配置、元数据、搜索配置和模板变量
 internal/conversation/  会话持久化、当前任务和绑定
 internal/fileutil/      跨平台原子替换
+internal/i18n/          语言检测、消息目录和运行时语言
 internal/render/        Markdown 渲染
 internal/terminaltext/  终端控制字符合理器
 internal/websearch/     Exa API
@@ -133,10 +136,21 @@ internal/websearch/     Exa API
 ## 修改系统提示词
 
 - 默认提示词模板中包含环境变量。
+- `system_prompt.json` 使用 `"zh-CN"` 和 `"en"` 语言映射，缺省语言回退到对应内置提示词。
+- 旧 `system_prompt.txt` 在首次读取时迁移，自定义内容会保留到两种语言，之后可分别翻译。
 - 支持变量：`{{os}}`、`{{arch}}`、`{{date}}`、`{{time}}`、`{{timezone}}`、`{{datetime}}`。
 - 兼容别名：`{{system}}`、`{{architecture}}`。
 - 变量在每次请求前动态渲染。
 - 只升级与旧内置默认值完全一致的提示词，不覆盖用户自定义内容。
+
+## 多语言
+
+- 环境变量优先级为 `LANGUAGE`、`LC_ALL`、`LC_MESSAGES`、`LANG`。
+- `language.json` 的 `output` 和 `prompt` 分别覆盖程序输出与提示词语言。
+- 支持值为 `zh-CN` 和 `en`，接受常见 locale 别名。
+- 新增终端文案时必须通过 `internal/i18n`，不能直接写仅中文或仅英文的状态文本。
+- 工具说明和模型提示按提示词语言选择，终端状态和错误按输出语言选择。
+- 英文消息目录覆盖测试会扫描源码，漏翻消息会失败。
 
 ## 测试策略
 
@@ -145,6 +159,7 @@ internal/websearch/     Exa API
 - 配置和缓存：`t.TempDir()`。
 - TTY 行为：可注入的 reader/writer，必要时使用伪终端人工验证。
 - 并发和流式改动：运行 race 测试。
+- 语言行为：固定 `LANGUAGE` 等环境变量并使用临时配置目录。
 - 真实模型和 Exa 调用仅用于人工端到端验证。
 - 平台相关代码必须通过 Windows 和 Darwin 交叉构建。
 

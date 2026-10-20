@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/YuleBest/ask-ai/internal/config"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 func runTool(args []string, stdout, stderr io.Writer, configPath configPathFunc) int {
@@ -90,7 +91,7 @@ func runWebSearchTool(args []string, toolID, operation string, meta config.Meta,
 			printErrorf(stderr, "%v", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "%s %s\n", newOutputStyle(stdout).yellow("已关闭工具:"), toolID)
+		fmt.Fprintf(stdout, "%s %s\n", newOutputStyle(stdout).yellow(i18n.T("已关闭工具:")), toolID)
 		return 0
 	case "use":
 		if len(args) != 3 {
@@ -127,7 +128,7 @@ func runWebSearchTool(args []string, toolID, operation string, meta config.Meta,
 		fmt.Fprintf(
 			stdout,
 			"%s %s/%s\n",
-			newOutputStyle(stdout).green("已切换工具提供商:"),
+			newOutputStyle(stdout).green(i18n.T("已切换工具提供商:")),
 			newOutputStyle(stdout).cyan(toolID),
 			newOutputStyle(stdout).cyan(providerID),
 		)
@@ -149,10 +150,10 @@ func listTools(meta config.Meta, stdout io.Writer) {
 	fmt.Fprintf(
 		stdout,
 		"%s  %s  %s  %s\n",
-		style.dim(fmt.Sprintf("%-16s", "TOOL")),
-		style.dim(fmt.Sprintf("%-16s", "CONFIG")),
-		style.dim(fmt.Sprintf("%-20s", "OPERATIONS")),
-		style.dim("PURPOSE"),
+		style.dim(fmt.Sprintf("%-16s", i18n.T("工具"))),
+		style.dim(fmt.Sprintf("%-16s", i18n.T("配置"))),
+		style.dim(fmt.Sprintf("%-20s", i18n.T("操作"))),
+		style.dim(i18n.T("用途")),
 	)
 	for _, id := range ids {
 		tool := meta.Tools[id]
@@ -162,9 +163,18 @@ func listTools(meta config.Meta, stdout io.Writer) {
 			style.cyan(fmt.Sprintf("%-16s", id)),
 			fmt.Sprintf("%-16s", tool.Config),
 			fmt.Sprintf("%-20s", strings.Join(tool.Operations, ",")),
-			tool.Description,
+			toolDescription(id, tool.Description),
 		)
 	}
+}
+
+func toolDescription(id, fallback string) string {
+	defaults := config.DefaultMeta()
+	defaultTool, exists := defaults.Tools[id]
+	if !exists || fallback != defaultTool.Description {
+		return fallback
+	}
+	return i18n.T(fallback)
 }
 
 func containsString(values []string, target string) bool {

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/YuleBest/ask-ai/internal/config"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 func runConfig(ctx context.Context, args []string, stdout, stderr io.Writer, configPath configPathFunc) int {
@@ -76,6 +77,10 @@ func ensureDefaultConfigFiles(meta config.Meta, configDir string) error {
 	if err != nil {
 		return err
 	}
+	languagePath, err := meta.PathFor("language", configDir)
+	if err != nil {
+		return err
+	}
 	webSearchPath, err := meta.PathFor("webSearch", configDir)
 	if err != nil {
 		return err
@@ -84,6 +89,9 @@ func ensureDefaultConfigFiles(meta config.Meta, configDir string) error {
 		return err
 	}
 	if err := config.EnsureSystemPromptFile(promptPath); err != nil {
+		return err
+	}
+	if err := config.EnsureLanguageFile(languagePath); err != nil {
 		return err
 	}
 	if err := config.EnsureWebSearchFile(webSearchPath); err != nil {
@@ -100,10 +108,16 @@ func listConfig(meta config.Meta, configDir string, stdout, stderr io.Writer) in
 	sort.Strings(keys)
 
 	style := newOutputStyle(stdout)
-	fmt.Fprintf(stdout, "%s  %s  %s\n", style.dim(fmt.Sprintf("%-16s", "KEY")), style.dim(fmt.Sprintf("%-24s", "FILE")), style.dim("DESCRIPTION"))
+	fmt.Fprintf(
+		stdout,
+		"%s  %s  %s\n",
+		style.dim(fmt.Sprintf("%-16s", i18n.T("键"))),
+		style.dim(fmt.Sprintf("%-24s", i18n.T("文件"))),
+		style.dim(i18n.T("说明")),
+	)
 	for _, key := range keys {
 		entry := meta.Configs[key]
-		fmt.Fprintf(stdout, "%s  %s  %s\n", style.cyan(fmt.Sprintf("%-16s", key)), fmt.Sprintf("%-24s", entry.File), entry.Description)
+		fmt.Fprintf(stdout, "%s  %s  %s\n", style.cyan(fmt.Sprintf("%-16s", key)), fmt.Sprintf("%-24s", entry.File), configDescription(key, entry.Description))
 	}
 	return 0
 }
@@ -123,13 +137,13 @@ func editConfig(ctx context.Context, meta config.Meta, configDir, key string, st
 
 func parseConfigViewArgs(args []string) (string, bool, error) {
 	if len(args) == 0 {
-		return "", false, errors.New("缺少配置键")
+		return "", false, i18n.New("缺少配置键")
 	}
 	key := args[0]
 	showSecrets := false
 	for _, arg := range args[1:] {
 		if arg != "--show-secrets" || showSecrets {
-			return "", false, fmt.Errorf("未知参数: %s", arg)
+			return "", false, i18n.Errorf("未知参数: %s", arg)
 		}
 		showSecrets = true
 	}
@@ -163,16 +177,16 @@ func isSensitiveConfigKey(key string) bool {
 func viewRedactedJSON(path string, stdout io.Writer) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("读取配置文件失败: %w", err)
+		return i18n.Errorf("读取配置文件失败: %w", err)
 	}
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
-		return fmt.Errorf("解析配置文件失败: %w", err)
+		return i18n.Errorf("解析配置文件失败: %w", err)
 	}
 	redactJSON(value)
 	data, err = json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成脱敏配置失败: %w", err)
+		return i18n.Errorf("生成脱敏配置失败: %w", err)
 	}
 	_, err = fmt.Fprintln(stdout, string(data))
 	return err
@@ -204,10 +218,10 @@ func resolveConfigPath(meta config.Meta, configDir, key string, create bool) (st
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("检查配置文件失败: %w", err)
+		return "", i18n.Errorf("检查配置文件失败: %w", err)
 	}
 	if !create {
-		return "", fmt.Errorf("配置文件不存在: %s", path)
+		return "", i18n.Errorf("配置文件不存在: %s", path)
 	}
 
 	switch key {
@@ -215,6 +229,8 @@ func resolveConfigPath(meta config.Meta, configDir, key string, create bool) (st
 		err = config.EnsureModelsFile(path)
 	case "systemPrompt":
 		err = config.EnsureSystemPromptFile(path)
+	case "language":
+		err = config.EnsureLanguageFile(path)
 	case "webSearch":
 		err = config.EnsureWebSearchFile(path)
 	default:
@@ -228,7 +244,7 @@ func resolveConfigPath(meta config.Meta, configDir, key string, create bool) (st
 		}
 	}
 	if err != nil {
-		return "", fmt.Errorf("创建配置文件失败: %w", err)
+		return "", i18n.Errorf("创建配置文件失败: %w", err)
 	}
 	return path, nil
 }
@@ -239,12 +255,12 @@ func viewFile(ctx context.Context, path string, stdout, stderr io.Writer) error 
 		return runExternalCommand(ctx, batcat, []string{"-pP", path}, stdout, stderr)
 	}
 	if !errors.Is(err, exec.ErrNotFound) {
-		return fmt.Errorf("查找 batcat 失败: %w", err)
+		return i18n.Errorf("查找 batcat 失败: %w", err)
 	}
 
 	cat, err := exec.LookPath("cat")
 	if err != nil {
-		return fmt.Errorf("找不到 batcat 或 cat: %w", err)
+		return i18n.Errorf("找不到 batcat 或 cat: %w", err)
 	}
 	return runExternalCommand(ctx, cat, []string{path}, stdout, stderr)
 }
@@ -255,7 +271,16 @@ func runExternalCommand(ctx context.Context, command string, args []string, stdo
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s 执行失败: %w", filepath.Base(command), err)
+		return i18n.Errorf("%s 执行失败: %w", filepath.Base(command), err)
 	}
 	return nil
+}
+
+func configDescription(key, fallback string) string {
+	defaults := config.DefaultMeta()
+	defaultEntry, exists := defaults.Configs[key]
+	if !exists || fallback != defaultEntry.Description {
+		return fallback
+	}
+	return i18n.T(fallback)
 }

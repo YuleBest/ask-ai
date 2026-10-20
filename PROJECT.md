@@ -12,7 +12,7 @@
 
 ## 项目目标
 
-`askai` 是一个面向终端的轻量 AI 助手。它使用 OpenAI 兼容的 Chat Completions 接口，提供流式正文、任务追问、连续对话、图片输入、Exa 网络搜索、会话管理和简单 Markdown 渲染。
+`askai` 是一个面向终端的轻量 AI 助手。它使用 OpenAI 兼容的 Chat Completions 接口，提供流式正文、任务追问、连续对话、图片输入、Exa 网络搜索、会话管理、简单 Markdown 渲染和中英文界面。
 
 项目优先保证以下体验：
 
@@ -30,7 +30,8 @@
 - 多 provider、多模型配置。
 - 任务列表、查看、切换、批量删除和终端绑定。
 - 图片作为 data URL 随当前问题发送。
-- 系统提示词变量、自定义提示词和旧默认提示词升级。
+- 程序输出与提示词语言独立配置，支持简体中文和英文。
+- 系统提示词变量、多语言自定义提示词和旧文本提示词迁移。
 
 当前不支持：
 
@@ -47,6 +48,8 @@
 - 推理内容和图片数据不写入会话历史。
 - 会话文本保存在 `~/.cache/ask-ai`。
 - 配置保存在 `~/.config/ask-ai`，权限按敏感配置处理。
+- 语言默认继承 `LANGUAGE`、`LC_ALL`、`LC_MESSAGES`、`LANG`，`language.json` 可分别覆盖输出和提示词语言。
+- 系统提示词保存在 `system_prompt.json`，按 `zh-CN` 和 `en` 映射。
 - 会话写入使用跨进程锁和消息合并，避免并发追问丢记录。
 - 模型、工具、图片和流式响应都有资源上限，错误响应不会被当作完整回答。
 - 不信任的模型、网页和工具文本在进入终端前清理控制序列。
@@ -61,6 +64,7 @@ internal/chat/          OpenAI 兼容客户端、SSE 和工具协议
 internal/config/        配置、元数据和系统提示词
 internal/conversation/  任务、当前指针和终端绑定
 internal/fileutil/      跨平台原子替换
+internal/i18n/         语言检测、消息目录和运行时语言
 internal/render/        Markdown 终端渲染
 internal/terminaltext/  终端控制字符合理器
 internal/websearch/     Exa 网络搜索与抓取

@@ -2,9 +2,10 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"runtime"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 func checkSecretFile(path string) error {
@@ -13,13 +14,13 @@ func checkSecretFile(path string) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("检查配置文件失败: %w", err)
+		return i18n.Errorf("检查配置文件失败: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("配置文件不是普通文件: %s", path)
+		return i18n.Errorf("配置文件不是普通文件: %s", path)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("配置文件权限过宽: %s，请执行 chmod 600", path)
+		return i18n.Errorf("配置文件权限过宽: %s，请执行 chmod 600", path)
 	}
 	return nil
 }

@@ -3,20 +3,20 @@ package cli
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/YuleBest/ask-ai/internal/conversation"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 	"github.com/YuleBest/ask-ai/internal/terminaltext"
 	"golang.org/x/term"
 )
 
 var (
-	errTaskSelectionCanceled    = errors.New("已取消任务删除")
-	errTaskSelectionInterrupted = errors.New("任务选择已中断")
+	errTaskSelectionCanceled    = i18n.New("已取消任务删除")
+	errTaskSelectionInterrupted = i18n.New("任务选择已中断")
 )
 
 type taskSelectionKey int
@@ -35,12 +35,12 @@ const (
 func selectTasksInTerminal(ctx context.Context, summaries []conversation.Summary, stdout io.Writer) ([]conversation.Summary, error) {
 	stdin := os.Stdin
 	if !term.IsTerminal(int(stdin.Fd())) || !isTerminal(stdout) {
-		return nil, errors.New("交互选择任务需要在终端中运行，请显式提供至少一个 hash")
+		return nil, i18n.New("交互选择任务需要在终端中运行，请显式提供至少一个 hash")
 	}
 
 	oldState, err := term.MakeRaw(int(stdin.Fd()))
 	if err != nil {
-		return nil, fmt.Errorf("启用终端交互模式失败: %w", err)
+		return nil, i18n.Errorf("启用终端交互模式失败: %w", err)
 	}
 	defer term.Restore(int(stdin.Fd()), oldState)
 
@@ -66,7 +66,7 @@ func runTaskSelectorContext(ctx context.Context, input io.Reader, output io.Writ
 		return nil, nil
 	}
 	if width < 40 {
-		return nil, errors.New("终端宽度不足 40 列，无法显示任务选择器")
+		return nil, i18n.New("终端宽度不足 40 列，无法显示任务选择器")
 	}
 	visibleCount := height - 3
 	if visibleCount < 1 {
@@ -84,7 +84,7 @@ func runTaskSelectorContext(ctx context.Context, input io.Reader, output io.Writ
 	style := newOutputStyle(output)
 
 	draw := func(footer string) error {
-		lines := []string{style.bold("选择要删除的任务")}
+		lines := []string{style.bold(i18n.T("选择要删除的任务"))}
 		end := offset + visibleCount
 		if end > len(summaries) {
 			end = len(summaries)
@@ -122,10 +122,10 @@ func runTaskSelectorContext(ctx context.Context, input io.Reader, output io.Writ
 		case taskSelectionConfirm:
 			count := selectedTaskCount(selected)
 			if count == 0 {
-				footer = "至少选择一个任务；空格选择，q 取消"
+				footer = i18n.T("至少选择一个任务；空格选择，q 取消")
 				continue
 			}
-			if err := draw(fmt.Sprintf("确认删除 %d 个任务？y 确认，其他取消", count)); err != nil {
+			if err := draw(i18n.T("确认删除 %d 个任务？y 确认，其他取消", count)); err != nil {
 				return nil, err
 			}
 			key, err := readTaskSelectionKeyContext(ctx, reader)
@@ -229,17 +229,17 @@ func readTaskSelectionKeyRaw(reader *bufio.Reader) (taskSelectionKey, error) {
 }
 
 func taskSelectorFooter(selected int) string {
-	return fmt.Sprintf("已选 %d 个任务", selected)
+	return i18n.T("已选 %d 个任务", selected)
 }
 
 func taskSelectorHelp(width int) string {
 	if width >= 60 {
-		return "空格选择  ↑/↓ 或 j/k 移动  Enter 确认  q 取消"
+		return i18n.T("空格选择  ↑/↓ 或 j/k 移动  Enter 确认  q 取消")
 	}
 	if width >= 45 {
-		return "空格选择  ↑↓/jk 移动  Enter 确认  q 取消"
+		return i18n.T("空格选择  ↑↓/jk 移动  Enter 确认  q 取消")
 	}
-	return "Space选择 ↑↓/jk移动 Enter确认 q取消"
+	return i18n.T("Space选择 ↑↓/jk移动 Enter确认 q取消")
 }
 
 func taskSelectorLine(summary conversation.Summary, selected, cursor bool, width int, style outputStyle) string {
@@ -285,7 +285,7 @@ func taskSelectorLine(summary conversation.Summary, selected, cursor bool, width
 func taskMessageForDisplayWidth(content string, limit int) string {
 	message := strings.Join(strings.Fields(terminaltext.Clean(content)), " ")
 	if message == "" {
-		return "（无首条用户消息）"
+		return i18n.T("（无首条用户消息）")
 	}
 	if limit < 4 {
 		limit = 4

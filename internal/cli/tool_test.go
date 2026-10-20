@@ -20,7 +20,7 @@ func TestToolList(t *testing.T) {
 	}); code != 0 {
 		t.Fatalf("tool ls code = %d, stderr = %q", code, stderr.String())
 	}
-	for _, want := range []string{"webSearch", "CONFIG", "off,use", "搜索公开网络"} {
+	for _, want := range []string{"webSearch", "配置", "off,use", "搜索公开网络"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("output = %q, want %q", stdout.String(), want)
 		}
@@ -130,5 +130,11 @@ func TestToolRejectsEnablingUnconfiguredProvider(t *testing.T) {
 	}
 	if loaded.IsConfigured() {
 		t.Fatal("tool was enabled with an empty Exa key")
+	}
+}
+
+func TestToolDescriptionPreservesCustomMetadata(t *testing.T) {
+	if got, want := toolDescription("webSearch", "custom search"), "custom search"; got != want {
+		t.Fatalf("toolDescription() = %q, want %q", got, want)
 	}
 }

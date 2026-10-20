@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 const (
@@ -24,6 +25,7 @@ type ExaClient struct {
 	APIKey     string
 	BaseURL    string
 	HTTPClient *http.Client
+	Language   i18n.Language
 }
 
 type SearchResult struct {
@@ -43,13 +45,13 @@ type FetchResult struct {
 }
 
 type exaSearchResponse struct {
-	Results []exaResult    `json:"results"`
+	Results []exaResult     `json:"results"`
 	Error   json.RawMessage `json:"error"`
 }
 
 type exaContentsResponse struct {
-	Results  []exaResult    `json:"results"`
-	Statuses []exaURLStatus `json:"statuses"`
+	Results  []exaResult     `json:"results"`
+	Statuses []exaURLStatus  `json:"statuses"`
 	Error    json.RawMessage `json:"error"`
 }
 
@@ -71,7 +73,7 @@ type exaURLStatus struct {
 func (c ExaClient) Search(ctx context.Context, query string, numResults int) ([]SearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return nil, errors.New("搜索词不能为空")
+		return nil, i18n.NewFor(c.Language, "搜索词不能为空")
 	}
 	if numResults <= 0 {
 		numResults = defaultResultCount
@@ -113,7 +115,7 @@ func (c ExaClient) Fetch(ctx context.Context, rawURL string) (FetchResult, error
 	rawURL = strings.TrimSpace(rawURL)
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return FetchResult{}, fmt.Errorf("无效的 URL: %s", rawURL)
+		return FetchResult{}, i18n.ErrorfFor(c.Language, "无效的 URL: %s", rawURL)
 	}
 
 	payload := map[string]any{
@@ -146,16 +148,16 @@ func (c ExaClient) Fetch(ctx context.Context, rawURL string) (FetchResult, error
 			}
 		}
 	}
-	return FetchResult{}, errors.New("exa 未返回页面内容")
+	return FetchResult{}, i18n.NewFor(c.Language, "exa 未返回页面内容")
 }
 
 func (c ExaClient) post(ctx context.Context, path string, payload, output any) error {
 	if strings.TrimSpace(c.APIKey) == "" {
-		return errors.New("exa API key 不能为空")
+		return i18n.NewFor(c.Language, "exa API key 不能为空")
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("构造 Exa 请求失败: %w", err)
+		return i18n.ErrorfFor(c.Language, "构造 Exa 请求失败: %w", err)
 	}
 
 	baseURL := strings.TrimRight(c.BaseURL, "/")
@@ -164,7 +166,7 @@ func (c ExaClient) post(ctx context.Context, path string, payload, output any) e
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+path, bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("创建 Exa 请求失败: %w", err)
+		return i18n.ErrorfFor(c.Language, "创建 Exa 请求失败: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+c.APIKey)
 	request.Header.Set("Content-Type", "application/json")
@@ -177,13 +179,13 @@ func (c ExaClient) post(ctx context.Context, path string, payload, output any) e
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("请求 Exa 失败: %w", err)
+		return i18n.ErrorfFor(c.Language, "请求 Exa 失败: %w", err)
 	}
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, 10<<20))
 	if err != nil {
-		return fmt.Errorf("读取 Exa 响应失败: %w", err)
+		return i18n.ErrorfFor(c.Language, "读取 Exa 响应失败: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var errorBody struct {
@@ -192,16 +194,16 @@ func (c ExaClient) post(ctx context.Context, path string, payload, output any) e
 		}
 		if json.Unmarshal(body, &errorBody) == nil {
 			if errorBody.Error != "" {
-				return fmt.Errorf("exa 返回 %s: %s", response.Status, errorBody.Error)
+				return i18n.ErrorfFor(c.Language, "exa 返回 %s: %s", response.Status, errorBody.Error)
 			}
 			if errorBody.Message != "" {
-				return fmt.Errorf("exa 返回 %s: %s", response.Status, errorBody.Message)
+				return i18n.ErrorfFor(c.Language, "exa 返回 %s: %s", response.Status, errorBody.Message)
 			}
 		}
-		return fmt.Errorf("exa 返回 %s: %s", response.Status, strings.TrimSpace(string(body)))
+		return i18n.ErrorfFor(c.Language, "exa 返回 %s: %s", response.Status, strings.TrimSpace(string(body)))
 	}
 	if err := json.Unmarshal(body, output); err != nil {
-		return fmt.Errorf("解析 Exa 响应失败: %w", err)
+		return i18n.ErrorfFor(c.Language, "解析 Exa 响应失败: %w", err)
 	}
 	return nil
 }

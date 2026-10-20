@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/YuleBest/ask-ai/internal/i18n"
 	"github.com/YuleBest/ask-ai/internal/terminaltext"
 )
 
@@ -81,5 +82,5 @@ func (s outputStyle) boldGreen(text string) string {
 
 func printErrorf(w io.Writer, format string, args ...any) {
 	style := newOutputStyle(w)
-	fmt.Fprintf(w, "%s %s\n", style.red("askai:"), fmt.Sprintf(format, args...))
+	fmt.Fprintf(w, "%s %s\n", style.red("askai:"), fmt.Sprintf(i18n.T(format), args...))
 }

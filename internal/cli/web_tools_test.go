@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/YuleBest/ask-ai/internal/chat"
+	"github.com/YuleBest/ask-ai/internal/config"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 	"github.com/YuleBest/ask-ai/internal/websearch"
 )
 
@@ -57,6 +59,19 @@ func TestPrintToolErrorPreview(t *testing.T) {
 	}
 }
 
+func TestToolErrorPreviewUsesOutputLanguage(t *testing.T) {
+	previous := i18n.OutputLanguage()
+	t.Cleanup(func() { i18n.SetOutputLanguage(previous) })
+	i18n.SetOutputLanguage(i18n.English)
+
+	var output bytes.Buffer
+	call := chat.ToolCall{Function: chat.ToolCallFunction{Name: "web_search"}}
+	printToolResultPreview(&output, call, `{"error":"搜索失败","error_code":"search_failed"}`)
+	if got, want := strings.TrimSpace(output.String()), "Error: Search failed"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
 func TestPreviewTextRespectsDisplayWidth(t *testing.T) {
 	got := previewText("中文内容 and more", 12)
 	if displayWidth(got) > 12 || !strings.HasSuffix(got, "...") {
@@ -82,6 +97,40 @@ func TestWebToolDefinitionsUseMetadata(t *testing.T) {
 	tools := webToolDefinitions()
 	if len(tools) != 2 || tools[0].Function.Name != "web_search" || tools[1].Function.Name != "web_fetch" {
 		t.Fatalf("tools = %+v, want metadata-backed web search and fetch", tools)
+	}
+}
+
+func TestWebToolDefinitionsFollowPromptLanguage(t *testing.T) {
+	meta := config.DefaultMeta()
+	chineseTools, err := webToolDefinitionsFromMeta(meta, i18n.ChineseSimplified)
+	if err != nil {
+		t.Fatalf("Chinese webToolDefinitionsFromMeta() error = %v", err)
+	}
+	if got := chineseTools[0].Function.Description; !strings.Contains(got, "搜索公开网络") {
+		t.Fatalf("Chinese tool description = %q", got)
+	}
+
+	englishTools, err := webToolDefinitionsFromMeta(meta, i18n.English)
+	if err != nil {
+		t.Fatalf("English webToolDefinitionsFromMeta() error = %v", err)
+	}
+	if got := englishTools[0].Function.Description; !strings.Contains(got, "Search the public web") {
+		t.Fatalf("English tool description = %q", got)
+	}
+}
+
+func TestWebToolDefinitionsPreserveCustomDescription(t *testing.T) {
+	meta := config.DefaultMeta()
+	tool := meta.Tools["webSearch"]
+	tool.Definitions[0].Description = "custom search description"
+	meta.Tools["webSearch"] = tool
+
+	tools, err := webToolDefinitionsFromMeta(meta, i18n.ChineseSimplified)
+	if err != nil {
+		t.Fatalf("webToolDefinitionsFromMeta() error = %v", err)
+	}
+	if got, want := tools[0].Function.Description, "custom search description"; got != want {
+		t.Fatalf("custom description = %q, want %q", got, want)
 	}
 }
 

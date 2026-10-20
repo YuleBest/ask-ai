@@ -119,8 +119,7 @@ func TestTaskShortcutCommands(t *testing.T) {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		code := runWithTerminal(context.Background(), args, &stdout, &stderr, func() (string, error) {
-			t.Fatal("config path should not be requested for task shortcuts")
-			return "", nil
+			return filepath.Join(t.TempDir(), "models.json"), nil
 		}, func(io.Writer, io.Writer) (string, error) {
 			t.Fatal("terminal ID should not be requested for task shortcuts")
 			return "", nil

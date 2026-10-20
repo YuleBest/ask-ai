@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,8 +14,7 @@ func TestVersionCommand(t *testing.T) {
 		t.Run(args[0], func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := runWithTerminalInput(context.Background(), args, nil, &stdout, &stderr, func() (string, error) {
-				t.Fatal("config path should not be requested for version")
-				return "", nil
+				return filepath.Join(t.TempDir(), "models.json"), nil
 			}, func(io.Writer, io.Writer) (string, error) {
 				t.Fatal("terminal ID should not be requested for version")
 				return "", nil
@@ -35,8 +35,7 @@ func TestVersionCommand(t *testing.T) {
 func TestVersionCommandRejectsArguments(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runWithTerminalInput(context.Background(), []string{"version", "extra"}, nil, &stdout, &stderr, func() (string, error) {
-		t.Fatal("config path should not be requested for version")
-		return "", nil
+		return filepath.Join(t.TempDir(), "models.json"), nil
 	}, func(io.Writer, io.Writer) (string, error) {
 		t.Fatal("terminal ID should not be requested for version")
 		return "", nil
@@ -57,8 +56,7 @@ func TestVersionFlagAfterQuestion(t *testing.T) {
 		t.Run(flag, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := runWithTerminalInput(context.Background(), []string{"问题", flag}, nil, &stdout, &stderr, func() (string, error) {
-				t.Fatal("config path should not be requested for version")
-				return "", nil
+				return filepath.Join(t.TempDir(), "models.json"), nil
 			}, func(io.Writer, io.Writer) (string, error) {
 				t.Fatal("terminal ID should not be requested for version")
 				return "", nil

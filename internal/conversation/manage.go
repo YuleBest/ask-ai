@@ -2,12 +2,13 @@ package conversation
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 type Summary struct {
@@ -37,7 +38,7 @@ func (s Store) List() ([]Summary, error) {
 	for _, id := range ids {
 		session, err := s.loadSession(id)
 		if err != nil {
-			return nil, fmt.Errorf("读取任务 %s 失败: %w", id, err)
+			return nil, i18n.Errorf("读取任务 %s 失败: %w", id, err)
 		}
 		summaries = append(summaries, summarizeSession(session, session.ID == currentID))
 	}
@@ -53,11 +54,11 @@ func (s Store) List() ([]Summary, error) {
 func (s Store) Resolve(prefix string) (string, error) {
 	prefix = strings.ToLower(strings.TrimSpace(prefix))
 	if len(prefix) < 6 || len(prefix) > sessionIDLength {
-		return "", fmt.Errorf("哈希长度必须为 6 到 %d 位", sessionIDLength)
+		return "", i18n.Errorf("哈希长度必须为 6 到 %d 位", sessionIDLength)
 	}
 	for _, char := range prefix {
 		if !strings.ContainsRune("0123456789abcdef", char) {
-			return "", errors.New("哈希只能包含 0-9 和 a-f")
+			return "", i18n.New("哈希只能包含 0-9 和 a-f")
 		}
 	}
 
@@ -73,11 +74,11 @@ func (s Store) Resolve(prefix string) (string, error) {
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("没有匹配的任务: %s", prefix)
+		return "", i18n.Errorf("没有匹配的任务: %s", prefix)
 	case 1:
 		return matches[0], nil
 	default:
-		return "", fmt.Errorf("哈希前缀 %s 匹配 %d 个任务，请提供更长的哈希", prefix, len(matches))
+		return "", i18n.Errorf("哈希前缀 %s 匹配 %d 个任务，请提供更长的哈希", prefix, len(matches))
 	}
 }
 
@@ -114,7 +115,7 @@ func (s Store) Remove(prefix string) (Summary, error) {
 		return Summary{}, err
 	}
 	if len(summaries) != 1 {
-		return Summary{}, errors.New("删除任务失败")
+		return Summary{}, i18n.New("删除任务失败")
 	}
 	return summaries[0], nil
 }
@@ -169,13 +170,13 @@ func (s Store) removeManyLocked(prefixes []string) ([]Summary, error) {
 	removedCurrent := false
 	for _, summary := range summaries {
 		if err := os.Remove(s.sessionPath(summary.ID)); err != nil {
-			return nil, fmt.Errorf("删除任务文件失败: %w", err)
+			return nil, i18n.Errorf("删除任务文件失败: %w", err)
 		}
 		removedCurrent = removedCurrent || summary.Current
 	}
 	if removedCurrent {
 		if err := os.Remove(s.lastPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("清除当前任务失败: %w", err)
+			return nil, i18n.Errorf("清除当前任务失败: %w", err)
 		}
 	}
 	return summaries, nil
@@ -194,14 +195,14 @@ func summarizeSession(session Session, current bool) Summary {
 
 func (s Store) sessionIDs() ([]string, error) {
 	if s.Root == "" {
-		return nil, errors.New("会话缓存目录不能为空")
+		return nil, i18n.New("会话缓存目录不能为空")
 	}
 	entries, err := os.ReadDir(s.sessionsDir())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("读取任务目录失败: %w", err)
+		return nil, i18n.Errorf("读取任务目录失败: %w", err)
 	}
 
 	ids := make([]string, 0, len(entries))

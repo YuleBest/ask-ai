@@ -10,6 +10,7 @@ import (
 
 	"github.com/YuleBest/ask-ai/internal/config"
 	"github.com/YuleBest/ask-ai/internal/conversation"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 func runModel(ctx context.Context, args []string, stdout, stderr io.Writer, configPath configPathFunc, terminalID terminalIDProvider) int {
@@ -66,7 +67,7 @@ func runModel(ctx context.Context, args []string, stdout, stderr io.Writer, conf
 			return 1
 		}
 		style := newOutputStyle(stdout)
-		fmt.Fprintf(stdout, "%s %s/%s\n", style.green("已设置默认模型:"), style.cyan(providerID), style.cyan(modelID))
+		fmt.Fprintf(stdout, "%s %s/%s\n", style.green(i18n.T("已设置默认模型:")), style.cyan(providerID), style.cyan(modelID))
 		return 0
 	default:
 		printErrorf(stderr, "未知模型命令: %s", args[0])
@@ -94,9 +95,9 @@ func listModels(models config.Models, stdout io.Writer) int {
 			}
 			marker := ""
 			if model.Default {
-				marker = "  " + style.green("[default]")
+				marker = "  " + style.green(i18n.T("[默认]"))
 			}
-			fmt.Fprintf(stdout, "  %s  %s%s\n", style.cyan(model.ID), style.dim("reasoning="+effort), marker)
+			fmt.Fprintf(stdout, "  %s  %s%s\n", style.cyan(model.ID), style.dim(i18n.T("推理强度=%s", effort)), marker)
 		}
 	}
 	return 0
@@ -142,7 +143,7 @@ func useModel(providerID, modelID string, stdout, stderr io.Writer, terminalID t
 		return 1
 	}
 	style := newOutputStyle(stdout)
-	fmt.Fprintf(stdout, "%s %s/%s  %s\n", style.green("已临时切换模型:"), style.cyan(providerID), style.cyan(modelID), style.dim(session.ID))
+	fmt.Fprintf(stdout, "%s %s/%s  %s\n", style.green(i18n.T("已临时切换模型:")), style.cyan(providerID), style.cyan(modelID), style.dim(session.ID))
 	return 0
 }
 
@@ -171,7 +172,7 @@ func loadModelsConfig(configPath configPathFunc) (config.Models, string, error) 
 func parseModelRef(ref string) (string, string, error) {
 	providerID, modelID, ok := strings.Cut(ref, "/")
 	if !ok || providerID == "" || modelID == "" {
-		return "", "", errors.New("模型格式必须为 <provider_id>/<model_id>")
+		return "", "", i18n.New("模型格式必须为 <provider_id>/<model_id>")
 	}
 	return providerID, modelID, nil
 }

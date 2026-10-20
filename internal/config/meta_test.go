@@ -18,7 +18,7 @@ func TestLoadOrCreateMeta(t *testing.T) {
 	if !created {
 		t.Fatal("LoadOrCreateMeta() did not report creation")
 	}
-	for _, key := range []string{"meta", "models", "systemPrompt", "webSearch"} {
+	for _, key := range []string{"meta", "models", "systemPrompt", "language", "webSearch"} {
 		if _, ok := meta.Configs[key]; !ok {
 			t.Fatalf("default meta is missing key %q", key)
 		}
@@ -42,8 +42,15 @@ func TestLoadOrCreateMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PathFor() error = %v", err)
 	}
-	if promptPath != filepath.Join(dir, "system_prompt.txt") {
+	if promptPath != filepath.Join(dir, "system_prompt.json") {
 		t.Fatalf("systemPrompt path = %q", promptPath)
+	}
+	languagePath, err := meta.PathFor("language", dir)
+	if err != nil {
+		t.Fatalf("PathFor(language) error = %v", err)
+	}
+	if languagePath != filepath.Join(dir, "language.json") {
+		t.Fatalf("language path = %q", languagePath)
 	}
 }
 
@@ -109,7 +116,7 @@ func TestLoadMetaAddsWebSearchKey(t *testing.T) {
 		Configs: map[string]MetaEntry{
 			"meta":         {File: "_meta.json", Description: "meta"},
 			"models":       {File: "models.json", Description: "models"},
-			"systemPrompt": {File: "system_prompt.txt", Description: "prompt"},
+			"systemPrompt": {File: "system_prompt.json", Description: "prompt"},
 		},
 	}
 	data, err := json.Marshal(meta)
@@ -131,5 +138,40 @@ func TestLoadMetaAddsWebSearchKey(t *testing.T) {
 	tool, exists := loaded.Tools["webSearch"]
 	if !exists || tool.Config != "webSearch" {
 		t.Fatalf("webSearch tool = %+v, exists = %v", tool, exists)
+	}
+}
+
+func TestLoadMetaMigratesLegacyPromptPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "_meta.json")
+	meta := Meta{
+		Version: metaVersion,
+		Configs: map[string]MetaEntry{
+			"meta":         {File: "_meta.json", Description: "meta"},
+			"models":       {File: "models.json", Description: "models"},
+			"systemPrompt": {File: "custom/prompt.txt", Description: "prompt"},
+		},
+	}
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal meta: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+
+	loaded, _, err := LoadOrCreateMeta(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateMeta() error = %v", err)
+	}
+	promptPath, err := loaded.PathFor("systemPrompt", dir)
+	if err != nil {
+		t.Fatalf("PathFor(systemPrompt) error = %v", err)
+	}
+	if got, want := promptPath, filepath.Join(dir, "custom", "prompt.json"); got != want {
+		t.Fatalf("prompt path = %q, want %q", got, want)
+	}
+	if _, err := loaded.PathFor("language", dir); err != nil {
+		t.Fatalf("language key was not added: %v", err)
 	}
 }

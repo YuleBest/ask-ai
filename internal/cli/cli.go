@@ -15,6 +15,7 @@ import (
 	"github.com/YuleBest/ask-ai/internal/chat"
 	"github.com/YuleBest/ask-ai/internal/config"
 	"github.com/YuleBest/ask-ai/internal/conversation"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 	"github.com/YuleBest/ask-ai/internal/render"
 	"github.com/YuleBest/ask-ai/internal/terminaltext"
 	"github.com/YuleBest/ask-ai/internal/websearch"
@@ -38,6 +39,11 @@ func runWithTerminal(ctx context.Context, args []string, stdout, stderr io.Write
 }
 
 func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, configPath configPathFunc, terminalID terminalIDProvider) int {
+	allowLanguageFallback := languageFallbackAllowed(args)
+	if err := configureLanguage(configPath); err != nil && !allowLanguageFallback {
+		printErrorf(stderr, "%v", err)
+		return 1
+	}
 	if len(args) > 0 && args[0] == "help" {
 		return runHelp(args[1:], stdout, stderr)
 	}
@@ -213,7 +219,18 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 		printErrorf(stderr, "%v", err)
 		return 1
 	}
-	systemPrompt, _, err := config.LoadOrCreateSystemPrompt(systemPromptPath)
+	languagePath, err := meta.PathFor("language", configDir)
+	if err != nil {
+		printErrorf(stderr, "%v: %s", err, metaPath)
+		return 1
+	}
+	language, _, err := config.LoadOrCreateLanguage(languagePath)
+	if err != nil {
+		printErrorf(stderr, "%v: %s", err, languagePath)
+		return 1
+	}
+	setLanguage(language.Resolve(os.Getenv))
+	systemPrompt, _, err := config.LoadOrCreateSystemPrompt(systemPromptPath, i18n.PromptLanguage())
 	if err != nil {
 		printErrorf(stderr, "%v: %s", err, systemPromptPath)
 		return 1
@@ -229,7 +246,7 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 		return 1
 	}
 	if created {
-		printCreatedConfig(stderr, modelsPath, systemPromptPath, metaPath)
+		printCreatedConfig(stderr, modelsPath, languagePath, systemPromptPath, metaPath)
 		return 1
 	}
 	if err := config.ValidateModels(models); err != nil {
@@ -244,14 +261,20 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 			printErrorf(stderr, "%v: %s", err, webSearchPath)
 			return 1
 		}
-		webTools, err = webToolDefinitionsFromMeta(meta)
+		webTools, err = webToolDefinitionsFromMeta(meta, i18n.PromptLanguage())
 		if err != nil {
 			printErrorf(stderr, "%v: %s", err, metaPath)
 			return 1
 		}
-		executor := webToolExecutor{client: websearch.ExaClient{APIKey: provider.Key}}
+		executor := webToolExecutor{
+			client: websearch.ExaClient{
+				APIKey:   provider.Key,
+				Language: i18n.PromptLanguage(),
+			},
+			language: i18n.PromptLanguage(),
+		}
 		executeWebTool = executor.Execute
-		systemPrompt = addWebToolInstructions(systemPrompt)
+		systemPrompt = addWebToolInstructions(systemPrompt, i18n.PromptLanguage())
 	}
 	var provider config.Provider
 	var model config.Model
@@ -311,9 +334,22 @@ func runWithTerminalInput(ctx context.Context, args []string, stdin io.Reader, s
 	return 0
 }
 
+func languageFallbackAllowed(args []string) bool {
+	if len(args) == 0 || languageConfigOperation(args) {
+		return true
+	}
+	for _, arg := range args {
+		switch arg {
+		case "help", "version", "-h", "--help", "-v", "--version":
+			return true
+		}
+	}
+	return false
+}
+
 func printBoundTask(w io.Writer, sessionID string) {
 	style := newOutputStyle(w)
-	fmt.Fprintf(w, "%s %s\n", style.green("已绑定任务:"), style.boldCyan(sessionID))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已绑定任务:")), style.boldCyan(sessionID))
 }
 
 type questionRunner func(string, []chat.ImageAttachment) error
@@ -399,7 +435,7 @@ func questionErrorCode(err error, stderr io.Writer) int {
 
 func printBindHint(w io.Writer) {
 	style := newOutputStyle(w)
-	fmt.Fprintln(w, style.dim("输入问题后按 Enter；输入 /exit 或按 Ctrl+C 退出并解绑。"))
+	fmt.Fprintln(w, style.dim(i18n.T("输入问题后按 Enter；输入 /exit 或按 Ctrl+C 退出并解绑。")))
 }
 
 func printBindDivider(w io.Writer) {
@@ -409,27 +445,27 @@ func printBindDivider(w io.Writer) {
 
 func printBindPrompt(w io.Writer) {
 	style := newOutputStyle(w)
-	fmt.Fprint(w, style.bold("问题> "))
+	fmt.Fprint(w, style.bold(i18n.T("问题> ")))
 }
 
 func printBindExit(w io.Writer) {
 	style := newOutputStyle(w)
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, style.dim("已退出连续对话，终端绑定已解除。"))
+	fmt.Fprintln(w, style.dim(i18n.T("已退出连续对话，终端绑定已解除。")))
 }
 
-func printCreatedConfig(w io.Writer, configPath, promptPath, metaPath string) {
+func printCreatedConfig(w io.Writer, configPath, languagePath, promptPath, metaPath string) {
 	style := newOutputStyle(w)
-	fmt.Fprintf(w, "%s %s\n", style.green("已生成配置文件:"), style.cyan(configPath))
-	fmt.Fprintf(w, "%s %s\n", style.green("已生成系统提示词:"), style.cyan(promptPath))
-	fmt.Fprintf(w, "%s %s\n", style.green("已生成配置元数据:"), style.cyan(metaPath))
-	fmt.Fprintln(w, style.yellow("请填写 provider 的 url、key 和 models 后重试。"))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成配置文件:")), style.cyan(configPath))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成语言配置:")), style.cyan(languagePath))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成系统提示词:")), style.cyan(promptPath))
+	fmt.Fprintf(w, "%s %s\n", style.green(i18n.T("已生成配置元数据:")), style.cyan(metaPath))
+	fmt.Fprintln(w, style.yellow(i18n.T("请填写 provider 的 url、key 和 models 后重试。")))
 }
 
 var (
 	errHelpRequested    = errors.New("帮助")
 	errVersionRequested = errors.New("版本")
-	errQuestionNeeded   = errors.New("缺少问题")
 )
 
 type cliOptions struct {
@@ -475,7 +511,7 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.showThink = true
 		case "-p", "--picture":
 			if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-				return cliOptions{}, errors.New("-p/--picture 需要图片路径")
+				return cliOptions{}, i18n.New("-p/--picture 需要图片路径")
 			}
 			opts.pictures = append(opts.pictures, args[0])
 			args = args[1:]
@@ -483,17 +519,17 @@ func parseArgs(args []string) (cliOptions, error) {
 			parseOptions = false
 		default:
 			if strings.HasPrefix(arg, "-") {
-				return cliOptions{}, fmt.Errorf("未知选项: %s", arg)
+				return cliOptions{}, i18n.Errorf("未知选项: %s", arg)
 			}
 			questionParts = append(questionParts, arg)
 		}
 	}
 	opts.question = strings.Join(questionParts, " ")
 	if opts.follow && opts.bind {
-		return cliOptions{}, errors.New("-f 和 -b 不能同时使用")
+		return cliOptions{}, i18n.New("-f 和 -b 不能同时使用")
 	}
 	if opts.question == "" && !opts.bind {
-		return opts, errQuestionNeeded
+		return opts, i18n.New("缺少问题")
 	}
 	return opts, nil
 }
@@ -570,7 +606,7 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 					thinking.clearBeforeOutput()
 					roundReasoningStarted = true
 					if _, err := io.WriteString(stderr, stderrStyle.gray(safeReasoning)); err != nil {
-						return fmt.Errorf("写入思考过程失败: %w", err)
+						return i18n.Errorf("写入思考过程失败: %w", err)
 					}
 					roundReasoningLastByte = safeReasoning[len(safeReasoning)-1]
 				}
@@ -593,12 +629,12 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 			if roundReasoningStarted && !contentStarted {
 				if roundReasoningLastByte != '\n' {
 					if _, err := io.WriteString(stderr, "\n"); err != nil {
-						return fmt.Errorf("分隔思考过程与正文失败: %w", err)
+						return i18n.Errorf("分隔思考过程与正文失败: %w", err)
 					}
 				}
 				divider := stderrStyle.gray(thinkingDividerText(time.Since(roundStartedAt)))
 				if _, err := fmt.Fprintf(stderr, "%s\n\n", divider); err != nil {
-					return fmt.Errorf("写入思考时长失败: %w", err)
+					return i18n.Errorf("写入思考时长失败: %w", err)
 				}
 			} else if !contentStarted {
 				thinking.clearBeforeOutput()
@@ -634,10 +670,10 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 			break
 		}
 		if executeTool == nil {
-			return "", errors.New("模型请求工具，但当前没有可执行的工具")
+			return "", i18n.New("模型请求工具，但当前没有可执行的工具")
 		}
 		if round == maxToolRounds-1 {
-			return "", errors.New("工具调用轮数超过限制")
+			return "", i18n.New("工具调用轮数超过限制")
 		}
 
 		assistantMessage := chat.Message{
@@ -669,22 +705,22 @@ func ask(ctx context.Context, client chat.Client, request chat.Request, stdout, 
 	contentSanitizer.Close()
 	reasoningSanitizer.Close()
 	if err := renderer.Close(); err != nil {
-		return "", fmt.Errorf("完成 Markdown 渲染失败: %w", err)
+		return "", i18n.Errorf("完成 Markdown 渲染失败: %w", err)
 	}
 	if answer.Len() == 0 {
-		return "", errors.New("响应结束但未收到可显示正文")
+		return "", i18n.New("响应结束但未收到可显示正文")
 	}
 	if lastByte != '\n' {
 		if _, err := io.WriteString(stdout, "\n"); err != nil {
-			return "", fmt.Errorf("写入换行失败: %w", err)
+			return "", i18n.Errorf("写入换行失败: %w", err)
 		}
 	}
 	if hasUsage && usageComplete {
 		if _, err := fmt.Fprintln(stderr); err != nil {
-			return "", fmt.Errorf("写入统计信息分隔行失败: %w", err)
+			return "", i18n.Errorf("写入统计信息分隔行失败: %w", err)
 		}
 		if err := printResponseStats(stderr, modelRef, totalUsage, generationDuration); err != nil {
-			return "", fmt.Errorf("写入统计信息失败: %w", err)
+			return "", i18n.Errorf("写入统计信息失败: %w", err)
 		}
 	}
 	return answer.String(), nil
@@ -761,7 +797,7 @@ func (t *thinkingIndicator) render() {
 }
 
 func thinkingElapsedText(seconds int) string {
-	return fmt.Sprintf("已思考 %d 秒...", seconds)
+	return i18n.T("已思考 %d 秒...", seconds)
 }
 
 func thinkingDurationText(duration time.Duration) string {
@@ -772,7 +808,7 @@ func thinkingDurationText(duration time.Duration) string {
 	if seconds < 1 {
 		seconds = 1
 	}
-	return fmt.Sprintf("已思考 %d 秒", seconds)
+	return i18n.T("已思考 %d 秒", seconds)
 }
 
 func thinkingDividerText(duration time.Duration) string {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -31,8 +32,7 @@ func TestHelpCommandAndSubcommandHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := runWithTerminal(context.Background(), tt.args, &stdout, &stderr, func() (string, error) {
-				t.Fatal("config path should not be requested for help")
-				return "", nil
+				return filepath.Join(t.TempDir(), "models.json"), nil
 			}, func(io.Writer, io.Writer) (string, error) {
 				t.Fatal("terminal ID should not be requested for help")
 				return "", nil

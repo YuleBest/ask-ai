@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 type WebSearchConfig struct {
@@ -34,12 +35,12 @@ func LoadOrCreateWebSearch(path string) (WebSearchConfig, bool, error) {
 		return config, true, nil
 	}
 	if err != nil {
-		return WebSearchConfig{}, false, fmt.Errorf("读取网络搜索配置失败: %w", err)
+		return WebSearchConfig{}, false, i18n.Errorf("读取网络搜索配置失败: %w", err)
 	}
 
 	var config WebSearchConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		return WebSearchConfig{}, false, fmt.Errorf("解析网络搜索配置失败: %w", err)
+		return WebSearchConfig{}, false, i18n.Errorf("解析网络搜索配置失败: %w", err)
 	}
 	config.Use = ToolUse(strings.TrimSpace(string(config.Use)))
 	for index := range config.Providers {
@@ -53,28 +54,28 @@ func EnsureWebSearchFile(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return checkSecretFile(path)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("检查网络搜索配置失败: %w", err)
+		return i18n.Errorf("检查网络搜索配置失败: %w", err)
 	}
 	return writeDefaultWebSearch(path, defaultWebSearchConfig())
 }
 
 func (c WebSearchConfig) ResolveProvider() (WebSearchProvider, error) {
 	if c.Use == "" {
-		return WebSearchProvider{}, errors.New("网络搜索未配置 use")
+		return WebSearchProvider{}, i18n.New("网络搜索未配置 use")
 	}
 	if c.Use != "exa" {
-		return WebSearchProvider{}, fmt.Errorf("不支持的网络搜索 provider: %s", c.Use)
+		return WebSearchProvider{}, i18n.Errorf("不支持的网络搜索 provider: %s", c.Use)
 	}
 	for _, provider := range c.Providers {
 		if provider.ID != string(c.Use) {
 			continue
 		}
 		if provider.Key == "" {
-			return WebSearchProvider{}, fmt.Errorf("网络搜索 provider %s 未配置 key", provider.ID)
+			return WebSearchProvider{}, i18n.Errorf("网络搜索 provider %s 未配置 key", provider.ID)
 		}
 		return provider, nil
 	}
-	return WebSearchProvider{}, fmt.Errorf("网络搜索 provider 不存在: %s", c.Use)
+	return WebSearchProvider{}, i18n.Errorf("网络搜索 provider 不存在: %s", c.Use)
 }
 
 func (c WebSearchConfig) IsConfigured() bool {
@@ -101,7 +102,7 @@ func defaultWebSearchConfig() WebSearchConfig {
 func SaveWebSearch(path string, config WebSearchConfig) error {
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成网络搜索配置失败: %w", err)
+		return i18n.Errorf("生成网络搜索配置失败: %w", err)
 	}
 	data = append(data, '\n')
 	return writeReplace(path, data)
@@ -110,7 +111,7 @@ func SaveWebSearch(path string, config WebSearchConfig) error {
 func writeDefaultWebSearch(path string, config WebSearchConfig) error {
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成网络搜索配置失败: %w", err)
+		return i18n.Errorf("生成网络搜索配置失败: %w", err)
 	}
 	data = append(data, '\n')
 	return writeExclusive(path, data)
@@ -123,11 +124,11 @@ func (u *ToolUse) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	if bytes.Equal(data, []byte("true")) {
-		return errors.New("工具 use 必须是 provider 字符串或 false")
+		return i18n.New("工具 use 必须是 provider 字符串或 false")
 	}
 	var provider string
 	if err := json.Unmarshal(data, &provider); err != nil {
-		return errors.New("工具 use 必须是 provider 字符串或 false")
+		return i18n.New("工具 use 必须是 provider 字符串或 false")
 	}
 	*u = ToolUse(strings.TrimSpace(provider))
 	return nil

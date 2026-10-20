@@ -3,10 +3,11 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 const metaVersion = 1
@@ -49,21 +50,30 @@ func LoadOrCreateMeta(path string) (Meta, bool, error) {
 		return meta, true, nil
 	}
 	if err != nil {
-		return Meta{}, false, fmt.Errorf("读取配置元数据失败: %w", err)
+		return Meta{}, false, i18n.Errorf("读取配置元数据失败: %w", err)
 	}
 
 	var meta Meta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return Meta{}, false, fmt.Errorf("解析配置元数据失败: %w", err)
+		return Meta{}, false, i18n.Errorf("解析配置元数据失败: %w", err)
 	}
 	if meta.Version != metaVersion {
-		return Meta{}, false, fmt.Errorf("不支持的配置元数据版本: %d", meta.Version)
+		return Meta{}, false, i18n.Errorf("不支持的配置元数据版本: %d", meta.Version)
 	}
 	if len(meta.Configs) == 0 {
-		return Meta{}, false, errors.New("配置元数据没有配置项")
+		return Meta{}, false, i18n.New("配置元数据没有配置项")
 	}
 	defaults := defaultMeta()
 	changed := false
+	if _, exists := meta.Configs["language"]; !exists {
+		meta.Configs["language"] = defaults.Configs["language"]
+		changed = true
+	}
+	if prompt, exists := meta.Configs["systemPrompt"]; exists && strings.EqualFold(filepath.Ext(prompt.File), ".txt") {
+		prompt.File = strings.TrimSuffix(prompt.File, filepath.Ext(prompt.File)) + ".json"
+		meta.Configs["systemPrompt"] = prompt
+		changed = true
+	}
 	if _, exists := meta.Configs["webSearch"]; !exists {
 		meta.Configs["webSearch"] = defaults.Configs["webSearch"]
 		changed = true
@@ -87,24 +97,46 @@ func LoadOrCreateMeta(path string) (Meta, bool, error) {
 	if changed {
 		data, err := json.MarshalIndent(meta, "", "  ")
 		if err != nil {
-			return Meta{}, false, fmt.Errorf("生成配置元数据失败: %w", err)
+			return Meta{}, false, i18n.Errorf("生成配置元数据失败: %w", err)
 		}
 		data = append(data, '\n')
 		if err := writeReplace(path, data); err != nil {
-			return Meta{}, false, fmt.Errorf("升级配置元数据失败: %w", err)
+			return Meta{}, false, i18n.Errorf("升级配置元数据失败: %w", err)
 		}
 	}
 	return meta, false, nil
 }
 
+func ReadExistingMeta(path string) (Meta, bool, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Meta{}, false, nil
+	}
+	if err != nil {
+		return Meta{}, false, i18n.Errorf("读取配置元数据失败: %w", err)
+	}
+
+	var meta Meta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return Meta{}, false, i18n.Errorf("解析配置元数据失败: %w", err)
+	}
+	if meta.Version != metaVersion {
+		return Meta{}, false, i18n.Errorf("不支持的配置元数据版本: %d", meta.Version)
+	}
+	if len(meta.Configs) == 0 {
+		return Meta{}, false, i18n.New("配置元数据没有配置项")
+	}
+	return meta, true, nil
+}
+
 func (m Meta) PathFor(key, configDir string) (string, error) {
 	entry, ok := m.Configs[key]
 	if !ok {
-		return "", fmt.Errorf("未知配置键: %s", key)
+		return "", i18n.Errorf("未知配置键: %s", key)
 	}
 	clean := filepath.Clean(entry.File)
 	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("配置键 %s 的文件路径无效", key)
+		return "", i18n.Errorf("配置键 %s 的文件路径无效", key)
 	}
 	return filepath.Join(configDir, clean), nil
 }
@@ -121,8 +153,12 @@ func defaultMeta() Meta {
 				File:        "models.json",
 				Description: "模型提供商与模型配置",
 			},
+			"language": {
+				File:        "language.json",
+				Description: "程序输出与提示词语言",
+			},
 			"systemPrompt": {
-				File:        "system_prompt.txt",
+				File:        "system_prompt.json",
 				Description: "系统提示词",
 			},
 			"webSearch": {
@@ -178,7 +214,7 @@ func defaultWebToolDefinitions() []MetaToolDefinition {
 func writeDefaultMeta(path string, meta Meta) error {
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成配置元数据失败: %w", err)
+		return i18n.Errorf("生成配置元数据失败: %w", err)
 	}
 	data = append(data, '\n')
 	return writeExclusive(path, data)

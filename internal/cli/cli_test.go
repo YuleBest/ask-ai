@@ -101,8 +101,8 @@ func TestRun(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	systemPromptPath := filepath.Join(filepath.Dir(path), "system_prompt.txt")
-	if err := os.WriteFile(systemPromptPath, []byte("自定义系统提示词\n"), 0o600); err != nil {
+	systemPromptPath := filepath.Join(filepath.Dir(path), "system_prompt.json")
+	if err := os.WriteFile(systemPromptPath, []byte(`{"zh-CN":"自定义系统提示词","en":"Custom system prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestRunPictureAttachment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 	imagePath := filepath.Join(dir, "github.png")
@@ -244,7 +244,7 @@ func TestRunPrintsResponseStats(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -477,7 +477,7 @@ func TestRunWebSearchToolToggle(t *testing.T) {
 			dir := t.TempDir()
 			modelPath := filepath.Join(dir, "models.json")
 			writeTestModelsConfig(t, modelPath, server.URL)
-			if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 				t.Fatalf("write system prompt: %v", err)
 			}
 			meta, _, err := config.LoadOrCreateMeta(config.MetaPath(modelPath))
@@ -521,7 +521,7 @@ func TestRunShowThink(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -564,8 +564,7 @@ func TestRunShowThink(t *testing.T) {
 func TestRunHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run(context.Background(), []string{"--help"}, &stdout, &stderr, func() (string, error) {
-		t.Fatal("config path should not be requested for help")
-		return "", nil
+		return filepath.Join(t.TempDir(), "models.json"), nil
 	})
 	if code != 0 {
 		t.Fatalf("run() code = %d, want 0", code)
@@ -591,7 +590,8 @@ func TestRunCreatesConfigAndSystemPrompt(t *testing.T) {
 	}
 	for _, createdPath := range []string{
 		path,
-		filepath.Join(dir, "ask-ai", "system_prompt.txt"),
+		filepath.Join(dir, "ask-ai", "language.json"),
+		filepath.Join(dir, "ask-ai", "system_prompt.json"),
 		filepath.Join(dir, "ask-ai", "_meta.json"),
 	} {
 		if _, err := os.Stat(createdPath); err != nil {
@@ -693,8 +693,8 @@ func TestRunFollow(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	systemPromptPath := filepath.Join(dir, "system_prompt.txt")
-	if err := os.WriteFile(systemPromptPath, []byte("系统提示\n"), 0o600); err != nil {
+	systemPromptPath := filepath.Join(dir, "system_prompt.json")
+	if err := os.WriteFile(systemPromptPath, []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -790,7 +790,7 @@ func TestRunFollowSpecifiedSession(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -862,7 +862,7 @@ func TestRunFollowWithoutHistory(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, "http://127.0.0.1:1")
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -968,7 +968,7 @@ func TestRunBindExitUnbinds(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, "http://127.0.0.1:1")
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -1043,7 +1043,7 @@ func TestRunBindStartsConversationLoop(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -1146,7 +1146,7 @@ func TestRunBindUsesPictureOnlyForFirstQuestion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 	imagePath := filepath.Join(dir, "logo.png")
@@ -1195,7 +1195,7 @@ func TestRunBindUnbindsOnContextCancel(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, "http://127.0.0.1:1")
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -1280,7 +1280,7 @@ func TestBoundTerminalFollowsWithoutFlag(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, path, server.URL)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write system prompt: %v", err)
 	}
 
@@ -1357,8 +1357,7 @@ func TestBindRequiresInteractiveTerminal(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	code := runWithTerminal(context.Background(), []string{"-b"}, &stdout, &stderr, func() (string, error) {
-		t.Fatal("config path should not be requested without a terminal")
-		return "", nil
+		return filepath.Join(t.TempDir(), "models.json"), nil
 	}, func(io.Writer, io.Writer) (string, error) {
 		return "", nil
 	})

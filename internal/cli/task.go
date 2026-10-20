@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/YuleBest/ask-ai/internal/conversation"
+	"github.com/YuleBest/ask-ai/internal/i18n"
 	"github.com/YuleBest/ask-ai/internal/terminaltext"
 )
 
@@ -75,16 +76,16 @@ func listTasks(store conversation.Store, stdout, stderr io.Writer) int {
 	}
 	style := newOutputStyle(stdout)
 	if len(summaries) == 0 {
-		fmt.Fprintln(stdout, style.dim("暂无任务"))
+		fmt.Fprintln(stdout, style.dim(i18n.T("暂无任务")))
 		return 0
 	}
 
 	fmt.Fprintf(
 		stdout,
 		"  %s  %s  %s\n",
-		style.dim(fmt.Sprintf("%-32s", "HASH")),
-		style.dim("首条消息"),
-		style.dim("模型 ID"),
+		style.dim(fmt.Sprintf("%-32s", i18n.T("哈希"))),
+		style.dim(i18n.T("首条消息")),
+		style.dim(i18n.T("模型 ID")),
 	)
 	for _, summary := range summaries {
 		marker := " "
@@ -125,20 +126,20 @@ func removeTasksWithSelectorContext(ctx context.Context, store conversation.Stor
 		return 1
 	}
 	if len(summaries) == 0 {
-		fmt.Fprintln(stdout, newOutputStyle(stdout).dim("暂无任务"))
+		fmt.Fprintln(stdout, newOutputStyle(stdout).dim(i18n.T("暂无任务")))
 		return 0
 	}
 
 	selected, err := selectTasks(summaries, stdout)
 	switch {
 	case errors.Is(err, errTaskSelectionCanceled):
-		fmt.Fprintln(stdout, newOutputStyle(stdout).dim("已取消，未删除任务"))
+		fmt.Fprintln(stdout, newOutputStyle(stdout).dim(i18n.T("已取消，未删除任务")))
 		return 0
 	case errors.Is(err, errTaskSelectionInterrupted):
-		fmt.Fprintln(stderr, newOutputStyle(stderr).dim("已取消，未删除任务"))
+		fmt.Fprintln(stderr, newOutputStyle(stderr).dim(i18n.T("已取消，未删除任务")))
 		return 130
 	case errors.Is(err, context.Canceled):
-		fmt.Fprintln(stderr, newOutputStyle(stderr).dim("已取消，未删除任务"))
+		fmt.Fprintln(stderr, newOutputStyle(stderr).dim(i18n.T("已取消，未删除任务")))
 		return 130
 	case err != nil:
 		printErrorf(stderr, "%v", err)
@@ -168,16 +169,16 @@ func printRemovedTasks(summaries []conversation.Summary, stdout io.Writer) {
 		return
 	}
 	if len(summaries) == 1 {
-		fmt.Fprintf(stdout, "%s %s\n", style.green("已删除任务:"), style.cyan(summaries[0].ID))
+		fmt.Fprintf(stdout, "%s %s\n", style.green(i18n.T("已删除任务:")), style.cyan(summaries[0].ID))
 	} else {
-		fmt.Fprintf(stdout, "%s %d 个任务:\n", style.green("已删除"), len(summaries))
+		fmt.Fprintf(stdout, "%s\n", style.green(i18n.T("已删除 %d 个任务:", len(summaries))))
 		for _, summary := range summaries {
 			fmt.Fprintf(stdout, "  %s  %s\n", style.cyan(summary.ID), style.dim(taskMessage(summary.FirstMessage)))
 		}
 	}
 	for _, summary := range summaries {
 		if summary.Current {
-			fmt.Fprintln(stdout, style.yellow("当前任务已清除"))
+			fmt.Fprintln(stdout, style.yellow(i18n.T("当前任务已清除")))
 			break
 		}
 	}
@@ -190,7 +191,7 @@ func switchTask(store conversation.Store, hash string, stdout, stderr io.Writer)
 		return 1
 	}
 	style := newOutputStyle(stdout)
-	fmt.Fprintf(stdout, "%s %s  %s\n", style.green("已切换任务:"), style.cyan(summary.ID), taskMessage(summary.FirstMessage))
+	fmt.Fprintf(stdout, "%s %s  %s\n", style.green(i18n.T("已切换任务:")), style.cyan(summary.ID), taskMessage(summary.FirstMessage))
 	return 0
 }
 
@@ -211,7 +212,7 @@ func viewTask(store conversation.Store, hash string, stdout, stderr io.Writer) i
 		return 1
 	}
 	style := newOutputStyle(stdout)
-	fmt.Fprintf(stdout, "%s %s\n", style.dim("任务:"), style.boldCyan(session.ID))
+	fmt.Fprintf(stdout, "%s %s\n", style.dim(i18n.T("任务:")), style.boldCyan(session.ID))
 	for _, message := range session.Messages {
 		label := "[" + message.Role + "]"
 		switch message.Role {
@@ -234,7 +235,7 @@ func taskMessage(content string) string {
 func taskMessageWithLimit(content string, limit int) string {
 	message := strings.Join(strings.Fields(terminaltext.Clean(content)), " ")
 	if message == "" {
-		return "（无首条用户消息）"
+		return i18n.T("（无首条用户消息）")
 	}
 	if limit < 4 {
 		limit = 4

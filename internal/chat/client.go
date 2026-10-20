@@ -7,12 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 type Client struct {
@@ -175,7 +176,7 @@ func NewHTTPClient() *http.Client {
 
 func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) error) (Result, error) {
 	if onDelta == nil {
-		return Result{}, errors.New("流式内容回调不能为空")
+		return Result{}, i18n.New("流式内容回调不能为空")
 	}
 
 	payload, err := json.Marshal(requestBody{
@@ -188,13 +189,13 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 		ToolChoice:      req.ToolChoice,
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("构造请求失败: %w", err)
+		return Result{}, i18n.Errorf("构造请求失败: %w", err)
 	}
 
 	endpoint := strings.TrimRight(c.APIURL, "/") + "/chat/completions"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return Result{}, fmt.Errorf("创建请求失败: %w", err)
+		return Result{}, i18n.Errorf("创建请求失败: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+c.APIKey)
 	request.Header.Set("Content-Type", "application/json")
@@ -206,7 +207,7 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 	}
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return Result{}, fmt.Errorf("请求失败: %w", err)
+		return Result{}, i18n.Errorf("请求失败: %w", err)
 	}
 	defer response.Body.Close()
 
@@ -216,7 +217,7 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 		if message == "" {
 			message = http.StatusText(response.StatusCode)
 		}
-		return Result{}, fmt.Errorf("接口返回 %s: %s", response.Status, message)
+		return Result{}, i18n.Errorf("接口返回 %s: %s", response.Status, message)
 	}
 
 	scanner := bufio.NewScanner(response.Body)
@@ -249,7 +250,7 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return false, fmt.Errorf("解析流式响应失败: %w", err)
+			return false, i18n.Errorf("解析流式响应失败: %w", err)
 		}
 		if chunk.Error != nil && chunk.Error.Message != "" {
 			return false, errors.New(chunk.Error.Message)
@@ -276,7 +277,7 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 			call, exists := toolCallsByIndex[toolDelta.Index]
 			if !exists {
 				if len(toolCallsByIndex) >= maxToolCalls {
-					return false, errors.New("工具调用数量超过限制")
+					return false, i18n.New("工具调用数量超过限制")
 				}
 				call = &ToolCall{}
 				toolCallsByIndex[toolDelta.Index] = call
@@ -292,7 +293,7 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 			}
 			toolArgumentBytes += len(toolDelta.Function.Arguments)
 			if toolArgumentBytes > maxToolArgumentBytes {
-				return false, errors.New("工具调用参数超过限制")
+				return false, i18n.New("工具调用参数超过限制")
 			}
 			call.Function.Arguments += toolDelta.Function.Arguments
 		}
@@ -302,14 +303,14 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 		}
 		contentBytes += len(delta.Content) + len(delta.ReasoningContent)
 		if contentBytes > maxStreamContentBytes {
-			return false, errors.New("流式响应内容超过限制")
+			return false, i18n.New("流式响应内容超过限制")
 		}
 		if err := onDelta(Delta{
 			Content:   delta.Content,
 			Reasoning: delta.ReasoningContent,
 			ToolCall:  notifyToolCall,
 		}); err != nil {
-			return false, fmt.Errorf("处理流式内容失败: %w", err)
+			return false, i18n.Errorf("处理流式内容失败: %w", err)
 		}
 		toolCallNotified = toolCallNotified || hasToolDelta
 		if delta.Content != "" {
@@ -337,12 +338,12 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 		value = strings.TrimPrefix(value, " ")
 		dataBytes += len(value) + 1
 		if dataBytes > maxSSEEventBytes {
-			return Result{}, errors.New("流式事件超过大小限制")
+			return Result{}, i18n.New("流式事件超过大小限制")
 		}
 		dataLines = append(dataLines, value)
 	}
 	if err := scanner.Err(); err != nil {
-		return Result{}, fmt.Errorf("读取流式响应失败: %w", err)
+		return Result{}, i18n.Errorf("读取流式响应失败: %w", err)
 	}
 	if !doneSeen && len(dataLines) > 0 {
 		done, err := processEvent()
@@ -354,19 +355,19 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 		}
 	}
 	if refusal != "" {
-		return Result{}, fmt.Errorf("模型拒绝回答: %s", refusal)
+		return Result{}, i18n.Errorf("模型拒绝回答: %s", refusal)
 	}
 	switch finishReason {
 	case "length":
-		return Result{}, errors.New("模型响应因长度限制被截断")
+		return Result{}, i18n.New("模型响应因长度限制被截断")
 	case "content_filter":
-		return Result{}, errors.New("模型响应被内容过滤器截断")
+		return Result{}, i18n.New("模型响应被内容过滤器截断")
 	}
 	if !doneSeen && finishReason == "" {
-		return Result{}, errors.New("流式响应未正常结束")
+		return Result{}, i18n.New("流式响应未正常结束")
 	}
 	if !wroteContent && len(toolCallsByIndex) == 0 {
-		return Result{}, errors.New("响应结束但未收到正文或工具调用")
+		return Result{}, i18n.New("响应结束但未收到正文或工具调用")
 	}
 
 	indexes := make([]int, 0, len(toolCallsByIndex))
@@ -381,16 +382,16 @@ func (c Client) Stream(ctx context.Context, req Request, onDelta func(Delta) err
 			call.Type = "function"
 		}
 		if call.ID == "" || call.Function.Name == "" {
-			return Result{}, errors.New("工具调用缺少 id 或函数名")
+			return Result{}, i18n.New("工具调用缺少 id 或函数名")
 		}
 		if call.Type != "function" {
-			return Result{}, fmt.Errorf("不支持的工具调用类型: %s", call.Type)
+			return Result{}, i18n.Errorf("不支持的工具调用类型: %s", call.Type)
 		}
 		if call.Function.Arguments == "" {
 			call.Function.Arguments = "{}"
 		}
 		if !json.Valid([]byte(call.Function.Arguments)) {
-			return Result{}, fmt.Errorf("工具调用参数不是有效 JSON: %s", call.Function.Name)
+			return Result{}, i18n.Errorf("工具调用参数不是有效 JSON: %s", call.Function.Name)
 		}
 		toolCalls = append(toolCalls, call)
 	}

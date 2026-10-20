@@ -20,12 +20,12 @@ func TestConfigListCreatesFiles(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("config code = %d, stderr = %q", code, stderr.String())
 	}
-	for _, key := range []string{"meta", "models", "systemPrompt", "webSearch"} {
+	for _, key := range []string{"meta", "models", "language", "systemPrompt", "webSearch"} {
 		if !strings.Contains(stdout.String(), key) {
 			t.Fatalf("config output = %q, want key %q", stdout.String(), key)
 		}
 	}
-	for _, file := range []string{"_meta.json", "models.json", "system_prompt.txt", "web_search.json"} {
+	for _, file := range []string{"_meta.json", "models.json", "language.json", "system_prompt.json", "web_search.json"} {
 		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
 			t.Fatalf("expected config file %s: %v", file, err)
 		}
@@ -95,6 +95,31 @@ printf 'NANO:%s\n' "$1"
 	}
 }
 
+func TestConfigEditLanguageCreatesInheritedConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "models.json")
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "nano"), `#!/bin/sh
+printf 'NANO:%s\n' "$1"
+`)
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	var stdout, stderr bytes.Buffer
+	code := runConfig(context.Background(), []string{"edit", "language"}, &stdout, &stderr, func() (string, error) {
+		return path, nil
+	})
+	if code != 0 {
+		t.Fatalf("config edit language code = %d, stderr = %q", code, stderr.String())
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "language.json"))
+	if err != nil {
+		t.Fatalf("read language.json: %v", err)
+	}
+	if got, want := string(data), "{}\n"; got != want {
+		t.Fatalf("language.json = %q, want inherited empty config", got)
+	}
+}
+
 func TestConfigViewRedactsSecretsByDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "models.json")
@@ -124,6 +149,12 @@ func TestConfigViewRedactsSecretsByDefault(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "test-key") {
 		t.Fatalf("config view --show-secrets omitted key: %q", stdout.String())
+	}
+}
+
+func TestConfigDescriptionPreservesCustomMetadata(t *testing.T) {
+	if got, want := configDescription("models", "custom models"), "custom models"; got != want {
+		t.Fatalf("configDescription() = %q, want %q", got, want)
 	}
 }
 

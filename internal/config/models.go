@@ -3,9 +3,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
 
 const defaultReasoningEffort = "high"
@@ -41,12 +42,12 @@ func LoadOrCreateModels(path string) (Models, bool, error) {
 		return models, true, nil
 	}
 	if err != nil {
-		return Models{}, false, fmt.Errorf("读取模型配置失败: %w", err)
+		return Models{}, false, i18n.Errorf("读取模型配置失败: %w", err)
 	}
 
 	var models Models
 	if err := json.Unmarshal(data, &models); err != nil {
-		return Models{}, false, fmt.Errorf("解析模型配置失败: %w", err)
+		return Models{}, false, i18n.Errorf("解析模型配置失败: %w", err)
 	}
 	for providerIndex := range models.Providers {
 		provider := &models.Providers[providerIndex]
@@ -83,9 +84,9 @@ func (m Models) Resolve(providerID, modelID string) (Provider, Model, error) {
 				return provider, model, nil
 			}
 		}
-		return Provider{}, Model{}, fmt.Errorf("provider %s 中不存在模型: %s", provider.ID, modelID)
+		return Provider{}, Model{}, i18n.Errorf("provider %s 中不存在模型: %s", provider.ID, modelID)
 	}
-	return Provider{}, Model{}, fmt.Errorf("provider 不存在: %s", providerID)
+	return Provider{}, Model{}, i18n.Errorf("provider 不存在: %s", providerID)
 }
 
 func (m Models) ResolveDefault() (Provider, Model, error) {
@@ -101,7 +102,7 @@ func (m Models) ResolveDefault() (Provider, Model, error) {
 				continue
 			}
 			if selected != nil {
-				return Provider{}, Model{}, errors.New("只能有一个模型设置 default: true")
+				return Provider{}, Model{}, i18n.New("只能有一个模型设置 default: true")
 			}
 			modelCopy := model
 			selected = &modelCopy
@@ -131,31 +132,31 @@ func (m *Models) SetDefault(providerID, modelID string) error {
 
 func (m Models) validateStructure() error {
 	if len(m.Providers) == 0 {
-		return errors.New("provider 不能为空")
+		return i18n.New("provider 不能为空")
 	}
 
 	providerIDs := make(map[string]bool, len(m.Providers))
 	for _, provider := range m.Providers {
 		if provider.ID == "" {
-			return errors.New("provider.id 不能为空")
+			return i18n.New("provider.id 不能为空")
 		}
 		if strings.Contains(provider.ID, "/") {
-			return fmt.Errorf("provider.id 不能包含斜杠: %s", provider.ID)
+			return i18n.Errorf("provider.id 不能包含斜杠: %s", provider.ID)
 		}
 		if providerIDs[provider.ID] {
-			return fmt.Errorf("provider.id 重复: %s", provider.ID)
+			return i18n.Errorf("provider.id 重复: %s", provider.ID)
 		}
 		providerIDs[provider.ID] = true
 		if len(provider.Models) == 0 {
-			return fmt.Errorf("provider %s 没有模型", provider.ID)
+			return i18n.Errorf("provider %s 没有模型", provider.ID)
 		}
 		modelIDs := make(map[string]bool, len(provider.Models))
 		for _, model := range provider.Models {
 			if model.ID == "" {
-				return fmt.Errorf("provider %s 包含空模型 ID", provider.ID)
+				return i18n.Errorf("provider %s 包含空模型 ID", provider.ID)
 			}
 			if modelIDs[model.ID] {
-				return fmt.Errorf("provider %s 的模型 ID 重复: %s", provider.ID, model.ID)
+				return i18n.Errorf("provider %s 的模型 ID 重复: %s", provider.ID, model.ID)
 			}
 			modelIDs[model.ID] = true
 		}
@@ -165,13 +166,13 @@ func (m Models) validateStructure() error {
 
 func validateActiveProvider(provider Provider) error {
 	if provider.Name == "" {
-		return fmt.Errorf("provider %s 的 name 不能为空", provider.ID)
+		return i18n.Errorf("provider %s 的 name 不能为空", provider.ID)
 	}
 	if provider.URL == "" {
-		return fmt.Errorf("provider %s 的 url 不能为空", provider.ID)
+		return i18n.Errorf("provider %s 的 url 不能为空", provider.ID)
 	}
 	if provider.Key == "" {
-		return fmt.Errorf("provider %s 的 key 不能为空", provider.ID)
+		return i18n.Errorf("provider %s 的 key 不能为空", provider.ID)
 	}
 	return nil
 }
@@ -180,7 +181,7 @@ func EnsureModelsFile(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return checkSecretFile(path)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("检查模型配置失败: %w", err)
+		return i18n.Errorf("检查模型配置失败: %w", err)
 	}
 	return writeDefaultModels(path, defaultModels())
 }
@@ -200,7 +201,7 @@ func defaultModels() Models {
 			},
 			{
 				ID:   "example",
-				Name: "示例提供商",
+				Name: "Example Provider",
 				URL:  "https://api.example.com/v1",
 				Key:  "",
 				Models: []Model{
@@ -214,7 +215,7 @@ func defaultModels() Models {
 func writeDefaultModels(path string, models Models) error {
 	data, err := json.MarshalIndent(models, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成模型配置失败: %w", err)
+		return i18n.Errorf("生成模型配置失败: %w", err)
 	}
 	data = append(data, '\n')
 	return writeExclusive(path, data)
@@ -226,7 +227,7 @@ func SaveModels(path string, models Models) error {
 	}
 	data, err := json.MarshalIndent(models, "", "  ")
 	if err != nil {
-		return fmt.Errorf("生成模型配置失败: %w", err)
+		return i18n.Errorf("生成模型配置失败: %w", err)
 	}
 	data = append(data, '\n')
 	return writeReplace(path, data)

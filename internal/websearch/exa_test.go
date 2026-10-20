@@ -8,7 +8,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/YuleBest/ask-ai/internal/i18n"
 )
+
+func TestErrorsUseConfiguredLanguage(t *testing.T) {
+	client := ExaClient{APIKey: "test", Language: i18n.English}
+	_, err := client.Fetch(context.Background(), "not-a-url")
+	if err == nil {
+		t.Fatal("Fetch() accepted invalid URL")
+	}
+	if got, want := err.Error(), "Invalid URL: not-a-url"; got != want {
+		t.Fatalf("Fetch() error = %q, want %q", got, want)
+	}
+}
 
 func TestExaSearch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

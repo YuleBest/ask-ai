@@ -123,10 +123,10 @@ func TestModelListAndShortcut(t *testing.T) {
 		"Local",
 		"http://127.0.0.1:7863/v1",
 		"test-model",
-		"reasoning=high",
+		"推理强度=high",
 		"model-b",
-		"reasoning=max",
-		"[default]",
+		"推理强度=max",
+		"[默认]",
 	} {
 		if !strings.Contains(long, want) {
 			t.Fatalf("model list output = %q, want %q", long, want)
@@ -165,7 +165,7 @@ func TestRunUsesSessionSelectedModel(t *testing.T) {
 	modelsPath := filepath.Join(dir, "models.json")
 	writeTestModelsConfig(t, modelsPath, server.URL)
 	appendTestModel(t, modelsPath, "model-b", "max", false)
-	if err := os.WriteFile(filepath.Join(dir, "system_prompt.txt"), []byte("系统提示\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "system_prompt.json"), []byte(`{"zh-CN":"系统提示","en":"System prompt"}`), 0o600); err != nil {
 		t.Fatalf("write prompt: %v", err)
 	}
 
