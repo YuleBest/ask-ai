@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-var Version = "v0.1.0-alpha.1"
+var Version = "v0.1.0-alpha.2"
 
 func runVersion(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {

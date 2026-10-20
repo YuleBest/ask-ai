@@ -36,8 +36,8 @@ CI 定义在 `.github/workflows/ci.yml`，会运行测试、竞态检查、`vet`
 
 ```sh
 go run ./cmd/askai version
-git tag -a v0.1.0-alpha.1 -m "askai v0.1.0-alpha.1"
-git push origin main v0.1.0-alpha.1
+git tag -a v0.1.0-alpha.2 -m "askai v0.1.0-alpha.2"
+git push origin main v0.1.0-alpha.2
 ```
 
 可在本地验证 GoReleaser 配置和完整快照：

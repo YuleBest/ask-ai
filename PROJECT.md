@@ -6,7 +6,7 @@
 - 可执行文件：`askai`
 - Go 模块：`github.com/YuleBest/ask-ai`
 - 语言与版本：Go 1.22+
-- 当前版本：`v0.1.0-alpha.1`
+- 当前版本：`v0.1.0-alpha.2`
 - 包管理：Go modules
 - 主要依赖：`golang.org/x/term`、`golang.org/x/sys`
 
